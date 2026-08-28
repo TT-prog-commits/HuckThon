@@ -1798,10 +1798,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
     var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
     var routeLineCoords = useReal ? routeState.coords : [originPt, destPt];
     L.polyline(routeLineCoords, useReal
-      ? {color:'#15130f', weight:3, opacity:0.5}
-      : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.4}
+      ? {color:'#15130f', weight:4, opacity:0.85}
+      : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}
     ).addTo(revealMap);
-    if(useReal) boundsPts = boundsPts.concat(routeLineCoords);
+    boundsPts = boundsPts.concat(routeLineCoords);
 
     L.circleMarker(originPt, {
       radius:7, color:'#15130f', weight:2, fillColor:'#faf9f6', fillOpacity:1
