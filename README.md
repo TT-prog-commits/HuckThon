@@ -23,6 +23,22 @@
 4. **Branch** を `main` / フォルダを `/ (root)` にして **Save**
 5. `index.html` はリポジトリ直下にあるため、公開URLは `https://tt-prog-commits.github.io/HuckThon/` になります(サブフォルダは付きません)
 
+## グループ対戦モードの設定 (Firebase Realtime Database)
+
+タイトル画面の「グループで対戦」（ルームコードで複数人が参加し、最後にスコアをランキング表示する対戦モード）を使うには、無料のFirebaseプロジェクトを1つ作成し、その設定値を `index.html` 内の `FIREBASE_CONFIG` に貼り付ける必要があります。Firebaseの設定が済んでいない間は、グループ対戦ボタンを押すと「サーバー設定が完了していません」と表示され、ソロモードはこれまで通り遊べます。
+
+1. https://console.firebase.google.com/ を開き、Googleアカウントでログイン
+2. 「プロジェクトを追加」から新しいプロジェクトを作成(名前は任意、例: `michikusa-kyoto`。Googleアナリティクスは不要ならオフでOK)
+3. 作成したプロジェクトの画面で、左メニューの **構築 → Realtime Database** を開き、「データベースを作成」
+   - ロケーションは任意(例: `asia-southeast1` など)
+   - セキュリティルールは、ハッカソン用の一時的な検証としてテストモード(`.read: true, .write: true`)のままで問題ありません。本番運用する場合はルームコード単位で書き込みを制限するルールに変更してください
+4. 左メニューの **プロジェクトの設定**(歯車アイコン) → 「全般」タブを開き、下の方の「マイアプリ」で「</> (ウェブ)」アイコンをクリックしてウェブアプリを追加(ニックネームは任意、Firebase Hostingは不要)
+5. 表示される `firebaseConfig` オブジェクト(`apiKey`, `authDomain`, `databaseURL`, `projectId` など)をコピー
+6. `index.html` 内で検索した `FIREBASE_CONFIG` の値(`YOUR_API_KEY` などのプレースホルダー)を、コピーした値にそのまま置き換えて保存
+7. `git add` → `git commit` → `git push` して公開すれば、グループ対戦が使えるようになります
+
+`firebaseConfig` の値はクライアント側に埋め込まれる前提の識別情報で、一般的なFirebaseアプリでも公開コードに含まれるものです(APIキーそのものに秘匿性はなく、実際のアクセス制御はRealtime Databaseのセキュリティルール側で行います)。
+
 ## 企画書
 
 `message.txt` に企画の詳細(コンセプト、ゲームの流れ、スコア設計、MVP範囲など)をまとめています。
