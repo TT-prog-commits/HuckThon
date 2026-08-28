@@ -350,6 +350,22 @@
   }
   .photo-frame img.quiz-img{width:100%; height:100%; object-fit:cover; display:block;}
   /* お題の写真は常にカラー表示（以前はストリートビュー取得失敗時のみ白黒/セピア調にしていた） */
+  /* 対戦モード: 指でなぞった部分だけ見える「のぞき窓」加工（ぼかした写真を重ね、なぞった位置だけ透過させる） */
+  .photo-veil{
+    position:absolute; inset:0; display:none;
+    background-size:cover; background-position:center;
+    filter:blur(22px) saturate(1.05);
+    transform:scale(1.08); /* ぼかしで縁が透けるのを防ぐ */
+    -webkit-mask-image:radial-gradient(circle at var(--vx,50%) var(--vy,50%), transparent 0, transparent 46px, rgba(0,0,0,.6) 74px, #000 104px);
+    mask-image:radial-gradient(circle at var(--vx,50%) var(--vy,50%), transparent 0, transparent 46px, rgba(0,0,0,.6) 74px, #000 104px);
+  }
+  .photo-frame.veiled{ touch-action:none; }
+  .photo-frame.veiled .photo-veil{ display:block; cursor:crosshair; }
+  .photo-veil-hint{
+    position:absolute; left:0; right:0; bottom:10px; text-align:center;
+    font-family:var(--label); font-size:11px; color:#faf9f6; letter-spacing:.06em;
+    text-shadow:0 1px 3px rgba(0,0,0,.7); pointer-events:none;
+  }
   .quiz-caption{
     margin-top:18px; text-align:center; font-family:var(--serif); font-weight:700; font-size:18px; color:var(--ink);
   }
@@ -1250,8 +1266,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <span><i class="dot dot-target"></i>目的地</span>
         </div>
       </div>
-      <div class="photo-frame">
+      <div class="photo-frame" id="photo-frame">
         <img class="quiz-img" id="quiz-img" src="" alt="お題の写真">
+        <div class="photo-veil" id="photo-veil"></div>
+        <p class="photo-veil-hint" id="photo-veil-hint">写真を指でなぞると、なぞった部分だけ見えます</p>
       </div>
       <p class="quiz-caption">この景色を探してください</p>
       <p class="quiz-hint" id="quiz-hint"></p>
@@ -2043,6 +2061,35 @@ svg.leaflet-image-layer.leaflet-interactive path {
     });
   }
 
+  // 対戦モード限定: お題写真を「指でなぞった部分だけ見える」状態にする、のぞき窓加工
+  function updateVeilPosition(clientX, clientY){
+    var frame = document.getElementById('photo-frame');
+    var rect = frame.getBoundingClientRect();
+    var x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    var y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+    frame.style.setProperty('--vx', x + 'px');
+    frame.style.setProperty('--vy', y + 'px');
+  }
+  (function(){
+    var frame = document.getElementById('photo-frame');
+    if(!frame) return;
+    frame.addEventListener('mousemove', function(e){
+      if(!frame.classList.contains('veiled')) return;
+      updateVeilPosition(e.clientX, e.clientY);
+    });
+    frame.addEventListener('touchstart', function(e){
+      if(!frame.classList.contains('veiled')) return;
+      var t = e.touches[0];
+      if(t) updateVeilPosition(t.clientX, t.clientY);
+    }, {passive:true});
+    frame.addEventListener('touchmove', function(e){
+      if(!frame.classList.contains('veiled')) return;
+      var t = e.touches[0];
+      if(t) updateVeilPosition(t.clientX, t.clientY);
+      e.preventDefault(); // なぞっている間はページのスクロールを止める
+    }, {passive:false});
+  })();
+
   function renderQuiz(){
     var lm = state.stops[state.idx];
     document.getElementById('quiz-index').textContent = state.idx+1;
@@ -2052,6 +2099,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
     document.getElementById('quiz-flavor').textContent = '『'+state.destination+'』へ向かう道中に、このお題が出現しました。（ストリートビュー実写）';
     document.getElementById('quiz-status').textContent = '';
     document.getElementById('file-input').value = '';
+    var frame = document.getElementById('photo-frame');
+    var veil = document.getElementById('photo-veil');
+    var veilHint = document.getElementById('photo-veil-hint');
+    if(state.groupMode){
+      frame.classList.add('veiled');
+      veil.style.backgroundImage = 'url("' + lm.liveImg + '")';
+      frame.style.setProperty('--vx', '50%');
+      frame.style.setProperty('--vy', '50%');
+      veilHint.style.display = '';
+    } else {
+      frame.classList.remove('veiled');
+      veilHint.style.display = 'none';
+    }
     renderStopPicker();
     renderRouteMap('quiz-map');
   }
