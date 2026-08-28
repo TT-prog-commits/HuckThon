@@ -174,12 +174,13 @@
     line-height:1.95;
     margin:0 0 36px;
   }
-  .hero-badges{display:flex; gap:0; flex-wrap:wrap; justify-content:center; margin-bottom:34px; border-top:1px solid var(--ink); border-left:1px solid var(--ink);}
+  .hero-badges{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:34px;}
   .hero-badge{
     font-family:var(--label); font-weight:500;
-    font-size:11.5px; color:var(--ink); border-right:1px solid var(--ink); border-bottom:1px solid var(--ink);
+    font-size:11.5px; color:var(--ink); border:1px solid var(--ink);
     padding:9px 16px; letter-spacing:.04em;
     background:transparent;
+    white-space:nowrap;
   }
   .hero-foot{
     position:relative; z-index:2;
@@ -1364,11 +1365,84 @@ svg.leaflet-image-layer.leaflet-interactive path {
     });
   });
 
+  // ---------------- route（OSRMの無料ルート検索。APIキー不要） ----------------
+  var DEFAULT_ORIGIN = {lat:34.9858, lng:135.7588}; // 現在地未取得時の仮の現在地（京都駅）
+  function routeOrigin(){
+    return state.userGeo || DEFAULT_ORIGIN;
+  }
+  function routeKeyFor(origin, dest){
+    return origin.lat.toFixed(3)+','+origin.lng.toFixed(3)+'|'+dest.lat.toFixed(3)+','+dest.lng.toFixed(3);
+  }
+  function fetchRoute(origin, dest){
+    var url = 'https://router.project-osrm.org/route/v1/foot/'
+      + origin.lng + ',' + origin.lat + ';' + dest.lng + ',' + dest.lat
+      + '?overview=full&geometries=geojson';
+    return fetch(url)
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(data && data.code === 'Ok' && data.routes && data.routes[0]){
+          var r = data.routes[0];
+          var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; }); // [lng,lat] -> [lat,lng]
+          return {coords: coords, distance: r.distance, isReal: true};
+        }
+        throw new Error('no route');
+      })
+      .catch(function(){
+        // ルート検索サービスが使えない場合は直線を仮のルートとして使う
+        return {coords: [[origin.lat, origin.lng], [dest.lat, dest.lng]], distance: haversine(origin.lat, origin.lng, dest.lat, dest.lng), isReal: false};
+      });
+  }
+  function pointAtDistance(coords, targetDist){
+    var acc = 0;
+    for(var i=0; i<coords.length-1; i++){
+      var a = coords[i], b = coords[i+1];
+      var segLen = haversine(a[0], a[1], b[0], b[1]);
+      if(acc + segLen >= targetDist){
+        var t = segLen > 0 ? (targetDist - acc) / segLen : 0;
+        return [a[0] + (b[0]-a[0])*t, a[1] + (b[1]-a[1])*t];
+      }
+      acc += segLen;
+    }
+    return coords[coords.length-1];
+  }
+  // ルート沿いにcount個の候補地点を、間隔を空けつつランダムに抽出する（お題の候補地点）
+  function sampleRoutePoints(coords, totalDist, count){
+    var pts = [];
+    if(!coords || coords.length < 2 || !totalDist) return pts;
+    var margin = Math.min(totalDist * 0.08, 150); // 出発・到着地点そのものは避ける
+    var usable = Math.max(totalDist - margin*2, 1);
+    for(var i=0; i<count; i++){
+      var segStart = margin + (usable*i/count);
+      var segEnd = margin + (usable*(i+1)/count);
+      var d = segStart + Math.random()*Math.max(segEnd-segStart, 1);
+      pts.push(pointAtDistance(coords, d));
+    }
+    return pts;
+  }
+
+  var routeState = {key:null, coords:null, distance:null, isReal:false, loading:false};
+  function ensureRoute(){
+    var origin = routeOrigin();
+    var dest = destCoord();
+    var key = routeKeyFor(origin, dest);
+    if(routeState.key === key || routeState.loading) return;
+    routeState.loading = true;
+    fetchRoute(origin, dest).then(function(result){
+      routeState.key = key;
+      routeState.coords = result.coords;
+      routeState.distance = result.distance;
+      routeState.isReal = result.isReal;
+      routeState.loading = false;
+      refreshRouteMaps();
+    });
+  }
+
   // ---------------- route map (Leaflet + OpenStreetMap、APIキー不要。設定画面とお題画面で共通利用) ----------------
   var routeMaps = {}; // 要素id -> {map, userMarker, destMarker, line}
   function renderRouteMap(mapId){
     var mapEl = document.getElementById(mapId);
     if(!mapEl || typeof L === 'undefined') return; // オフライン等でLeafletが読めない場合は地図欄を省略
+    ensureRoute();
     var dest = destCoord();
     var rm = routeMaps[mapId];
     if(!rm){
@@ -1393,8 +1467,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
       rm.userMarker = L.circleMarker(userPt, {
         radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
       }).addTo(map).bindTooltip('現在地', {permanent:false});
-      rm.line = L.polyline([userPt, [dest.lat, dest.lng]], {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}).addTo(map);
-      map.fitBounds([userPt, [dest.lat, dest.lng]], {padding:[30,30], maxZoom:15});
+
+      var key = routeKeyFor(state.userGeo, dest);
+      var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
+      var lineCoords = useReal ? routeState.coords : [userPt, [dest.lat, dest.lng]];
+      rm.line = L.polyline(lineCoords, useReal
+        ? {color:'#15130f', weight:4, opacity:0.85}
+        : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}
+      ).addTo(map);
+      map.fitBounds(lineCoords, {padding:[30,30], maxZoom:15});
     } else {
       map.setView([dest.lat, dest.lng], 13);
     }
@@ -1442,21 +1523,38 @@ svg.leaflet-image-layer.leaflet-interactive path {
     return 'https://maps.googleapis.com/maps/api/streetview/metadata?location='+lat+','+lng+
       '&radius=300&source=outdoor&key='+encodeURIComponent(key);
   }
-  // 実在するストリートビューの写真だけをお題にするため、その地点付近（半径300m）に
-  // 実写パノラマがあるか確認し、あれば実写URLを添えて true を返す。なければ false。
-  function resolveStopImage(lm, key){
+  // ルート沿いの1地点（[lat,lng]）に実写パノラマがあるか確認し（半径300m）、
+  // あればその地点＋実写URLを、なければ null を返す。
+  function resolveStreetViewAt(pt, key){
     var heading = Math.floor(Math.random()*360);
-    return fetch(streetViewMetadataUrl(lm.lat, lm.lng, key))
+    return fetch(streetViewMetadataUrl(pt[0], pt[1], key))
       .then(function(res){ return res.json(); })
       .then(function(meta){
         if(meta && meta.status === 'OK'){
-          lm.liveImg = streetViewImageUrl(lm.lat, lm.lng, heading, key);
-          return true;
+          return {lat: pt[0], lng: pt[1], liveImg: streetViewImageUrl(pt[0], pt[1], heading, key)};
         }
-        return false;
+        return null;
       })
-      .catch(function(){ return false; /* ネットワーク不可・キー不正・ブロックなど */ });
+      .catch(function(){ return null; /* ネットワーク不可・キー不正・ブロックなど */ });
   }
+  // 地点の緯度経度から、お題の表示名（付近の通り・地名）を逆ジオコーディングで取得する（失敗時はnull）
+  function reverseGeocode(lat, lng){
+    var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat='+lat+'&lon='+lng+'&zoom=17&accept-language=ja';
+    return fetch(url, {headers:{'Accept':'application/json'}})
+      .then(function(res){ return res.json(); })
+      .then(function(data){
+        if(!data) return null;
+        var addr = data.address || {};
+        return addr.road || addr.neighbourhood || addr.suburb || addr.quarter || addr.city_district ||
+          (data.display_name ? data.display_name.split(/[、,]/)[0] : null);
+      })
+      .catch(function(){ return null; });
+  }
+  var HINT_VARIANTS = [
+    '写真とよく似た景色を、道沿いで探してみてください。',
+    '道の途中に見えるこの景色を探してみましょう。',
+    'この一枚に写る景色が、道のどこかにあります。'
+  ];
 
   document.getElementById('btn-depart').addEventListener('click', function(){
     if(!destResolved){
@@ -1469,10 +1567,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     persistApiKey(state.apiKey, document.getElementById('chk-remember-key').checked);
     show('screen-loading');
     var loadingText = document.getElementById('loading-text');
-    loadingText.textContent = '現在地から経路を検索中…';
-    setTimeout(function(){
-      loadingText.textContent = '道中のストリートビューを確認しています…';
-    }, 1100);
+    loadingText.textContent = '現在地から目的地までの経路を検索中…';
 
     var afterSelect = function(){
       if(!state.apiKey){
@@ -1480,33 +1575,56 @@ svg.leaflet-image-layer.leaflet-interactive path {
         setTimeout(function(){ show('screen-setup'); }, 1800);
         return;
       }
-      var candidates = shuffle(DATA.landmarks);
-      var confirmed = [];
-      var i = 0;
-      var tryNext = function(){
-        if(confirmed.length >= wantCount || i >= candidates.length){
-          finalize();
-          return;
-        }
-        var lm = candidates[i++];
-        resolveStopImage(lm, state.apiKey).then(function(ok){
-          if(ok) confirmed.push(lm);
-          tryNext();
-        });
-      };
-      var finalize = function(){
-        if(confirmed.length === 0){
-          loadingText.textContent = 'この付近のストリートビューが見つかりませんでした。目的地を変えてお試しください。';
-          setTimeout(function(){ show('screen-setup'); }, 2400);
-          return;
-        }
-        state.stops = confirmed;
-        state.stopsCount = confirmed.length;
-        initQuiz();
-      };
-      tryNext();
+      var origin = routeOrigin();
+      var dest = destCoord();
+      fetchRoute(origin, dest).then(function(route){
+        routeState.key = routeKeyFor(origin, dest);
+        routeState.coords = route.coords;
+        routeState.distance = route.distance;
+        routeState.isReal = route.isReal;
+        refreshRouteMaps();
+
+        loadingText.textContent = '道中のストリートビューを確認しています…';
+        var candidateCount = Math.min(Math.max(wantCount*4, 8), 20);
+        var candidates = shuffle(sampleRoutePoints(route.coords, route.distance, candidateCount));
+        var confirmed = [];
+        var i = 0;
+        var tryNext = function(){
+          if(confirmed.length >= wantCount || i >= candidates.length){
+            finalize();
+            return;
+          }
+          var pt = candidates[i++];
+          resolveStreetViewAt(pt, state.apiKey).then(function(hit){
+            if(hit) confirmed.push(hit);
+            tryNext();
+          });
+        };
+        var finalize = function(){
+          if(confirmed.length === 0){
+            loadingText.textContent = 'この道沿いのストリートビューが見つかりませんでした。目的地を変えてお試しください。';
+            setTimeout(function(){ show('screen-setup'); }, 2400);
+            return;
+          }
+          loadingText.textContent = '道沿いの地名を確認しています…';
+          var namePromises = confirmed.map(function(stop, idx){
+            return reverseGeocode(stop.lat, stop.lng).then(function(label){
+              stop.key = 'route-' + idx;
+              stop.name = label || '道中の一地点';
+              stop.hint = HINT_VARIANTS[Math.floor(Math.random()*HINT_VARIANTS.length)];
+              stop.fact = label ? ('ここは「'+label+'」付近でした。') : '目的地までの道中にある一地点でした。';
+            });
+          });
+          Promise.all(namePromises).then(function(){
+            state.stops = confirmed;
+            state.stopsCount = confirmed.length;
+            initQuiz();
+          });
+        };
+        tryNext();
+      });
     };
-    setTimeout(afterSelect, 2200);
+    setTimeout(afterSelect, 600);
   });
 
   // ---------------- quiz flow ----------------
