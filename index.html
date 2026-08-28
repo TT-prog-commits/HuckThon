@@ -247,10 +247,15 @@
   }
   .setup-actions{margin-top:8px; display:flex; justify-content:center;}
   .route-preview{
-    margin-top:22px; padding:14px 16px; border-radius:1px;
+    margin-top:14px; padding:14px 16px; border-radius:1px;
     background:var(--bg-2); border:1px dashed var(--ink-faint);
     font-size:12.5px; color:var(--ink-dim); line-height:1.8;
   }
+  .route-map-wrap{margin-top:22px;}
+  .route-map{
+    width:100%; height:200px; border:1.5px solid var(--ink); background:var(--bg-2);
+  }
+  .route-map .leaflet-control-attribution{font-size:9px;}
 
   /* ---------- LOADING ---------- */
   .loading-wrap{text-align:center;}
@@ -276,12 +281,7 @@
     aspect-ratio:4/3; background:var(--ink);
   }
   .photo-frame img.quiz-img{width:100%; height:100%; object-fit:cover; display:block;}
-  .photo-frame.duotone img{filter:grayscale(1) contrast(1.25) brightness(0.95);}
-  .photo-frame.duotone::after{
-    content:''; position:absolute; inset:0; pointer-events:none;
-    background:linear-gradient(150deg, rgba(193,50,26,0.4), rgba(21,19,15,0.25) 60%);
-    mix-blend-mode:multiply;
-  }
+  /* お題の写真は常にカラー表示（以前はストリートビュー取得失敗時のみ白黒/セピア調にしていた） */
   .quiz-caption{
     margin-top:18px; text-align:center; font-family:var(--serif); font-weight:700; font-size:18px; color:var(--ink);
   }
@@ -1114,6 +1114,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <option value="5">2時間以上（お題 5問）</option>
         </select>
       </div>
+      <div class="route-map-wrap">
+        <div class="route-map" id="route-map"></div>
+        <div class="map-legend">
+          <span><i class="dot dot-user"></i>現在地</span>
+          <span><i class="dot dot-target"></i>目的地</span>
+        </div>
+      </div>
       <div class="route-preview" id="route-preview">
         移動時間が長いほど、道中で出会えるお題も増えます。じっくり探すもよし、駆け足で探すもよし。
       </div>
@@ -1258,7 +1265,59 @@ svg.leaflet-image-layer.leaflet-interactive path {
   };
 
   // ---------------- setup screen ----------------
-  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); });
+  // おおよその目的地の緯度経度（京都市内の目安地点。ルート地図のプレビュー用）
+  var DEST_COORDS = {
+    '祇園・八坂神社周辺': {lat:35.0037, lng:135.7788},
+    '嵐山': {lat:35.0094, lng:135.6683},
+    '伏見稲荷大社': {lat:34.9671, lng:135.7727},
+    '銀閣寺・哲学の道': {lat:35.0272, lng:135.7982},
+    '金閣寺': {lat:35.0394, lng:135.7292},
+    '宇治（平等院）': {lat:34.8842, lng:135.8083},
+    '京都駅': {lat:34.9858, lng:135.7588},
+    'おまかせで探索': {lat:35.0116, lng:135.7681}
+  };
+
+  // ---------------- route map (Leaflet + OpenStreetMap、APIキー不要) ----------------
+  var setupMap = null, setupUserMarker = null, setupDestMarker = null, setupRouteLine = null;
+  function destCoord(){
+    var sel = document.getElementById('sel-destination');
+    var v = sel ? sel.value : '';
+    return DEST_COORDS[v] || DEST_COORDS['京都駅'];
+  }
+  function renderSetupMap(){
+    var mapEl = document.getElementById('route-map');
+    if(!mapEl || typeof L === 'undefined') return; // オフライン等でLeafletが読めない場合は地図欄を省略
+    var dest = destCoord();
+    if(!setupMap){
+      setupMap = L.map(mapEl, {attributionControl:true, zoomControl:true});
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(setupMap);
+    }
+    if(setupDestMarker) setupMap.removeLayer(setupDestMarker);
+    setupDestMarker = L.circleMarker([dest.lat, dest.lng], {
+      radius:9, color:'#faf9f6', weight:2, fillColor:'#c1321a', fillOpacity:1
+    }).addTo(setupMap).bindTooltip('目的地', {permanent:false});
+
+    if(setupRouteLine){ setupMap.removeLayer(setupRouteLine); setupRouteLine = null; }
+
+    if(state.userGeo){
+      var userPt = [state.userGeo.lat, state.userGeo.lng];
+      if(setupUserMarker) setupMap.removeLayer(setupUserMarker);
+      setupUserMarker = L.circleMarker(userPt, {
+        radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
+      }).addTo(setupMap).bindTooltip('現在地', {permanent:false});
+      setupRouteLine = L.polyline([userPt, [dest.lat, dest.lng]], {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}).addTo(setupMap);
+      setupMap.fitBounds([userPt, [dest.lat, dest.lng]], {padding:[30,30], maxZoom:14});
+    } else {
+      setupMap.setView([dest.lat, dest.lng], 12);
+    }
+    setTimeout(function(){ if(setupMap) setupMap.invalidateSize(); }, 60);
+  }
+
+  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderSetupMap(); });
+  document.getElementById('sel-destination').addEventListener('change', function(){ renderSetupMap(); });
 
   var geoStatus = document.getElementById('geo-status');
   document.getElementById('btn-geo').addEventListener('click', function(){
@@ -1270,6 +1329,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     navigator.geolocation.getCurrentPosition(function(pos){
       state.userGeo = {lat:pos.coords.latitude, lng:pos.coords.longitude};
       geoStatus.textContent = '取得しました ('+pos.coords.latitude.toFixed(3)+', '+pos.coords.longitude.toFixed(3)+')';
+      renderSetupMap();
     }, function(){
       geoStatus.textContent = '取得できませんでした（体験モードで進みます）';
     }, {timeout:8000});
