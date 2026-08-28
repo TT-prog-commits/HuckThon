@@ -292,6 +292,16 @@
   .quiz-progress{font-family:var(--label); font-size:12.5px; color:var(--ink-faint); letter-spacing:.08em; font-variant-numeric:tabular-nums;}
   .progress-track{height:3px; border-radius:0; background:var(--line-soft); overflow:hidden; margin-top:7px; width:140px;}
   .progress-fill{height:100%; background:var(--shu); transition:width .4s ease;}
+  .stop-picker{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;}
+  .stop-chip{
+    width:34px; height:34px; border-radius:50%; border:1.5px solid var(--ink);
+    background:var(--bg-2); color:var(--ink); font-family:var(--label); font-size:13px;
+    font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .stop-chip:hover:not(:disabled){border-color:var(--shu); color:var(--shu);}
+  .stop-chip.active{background:var(--ink); color:var(--bg); border-color:var(--ink);}
+  .stop-chip.done{background:var(--bg-2); border-color:var(--ink-faint); color:var(--ink-faint); cursor:default;}
+  .stop-picker-note{font-size:11.5px; color:var(--ink-faint); margin:0 0 16px; line-height:1.7;}
   .quiz-map-wrap{width:100%; margin-bottom:16px;}
   .quiz-map{
     width:100%; height:180px; border:1.5px solid var(--ink); background:var(--bg-2);
@@ -1133,12 +1143,18 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <ul class="dest-suggestions" id="dest-suggestions"></ul>
       </div>
       <div class="field">
-        <label>移動時間の目安</label>
-        <select id="sel-duration">
-          <option value="1">10分くらい（お題 1問）</option>
-          <option value="2" selected>30分くらい（お題 2問）</option>
-          <option value="3">1時間くらい（お題 3問）</option>
-          <option value="5">2時間以上（お題 5問）</option>
+        <label>お題の枚数</label>
+        <select id="sel-count">
+          <option value="1">1問</option>
+          <option value="2" selected>2問</option>
+          <option value="3">3問</option>
+          <option value="4">4問</option>
+          <option value="5">5問</option>
+          <option value="6">6問</option>
+          <option value="7">7問</option>
+          <option value="8">8問</option>
+          <option value="9">9問</option>
+          <option value="10">10問</option>
         </select>
       </div>
       <div class="route-map-wrap">
@@ -1149,7 +1165,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
       </div>
       <div class="route-preview" id="route-preview">
-        移動時間が長いほど、道中で出会えるお題も増えます。じっくり探すもよし、駆け足で探すもよし。
+        お題はどの順番から撮影してもOK。好きな地点から探しに行こう。
       </div>
       <div class="field apikey-field">
         <p class="apikey-note">道中のお題には、実際のストリートビュー写真のみを使用します。ストリートビューが見つからない地点は自動でスキップされます。</p>
@@ -1188,6 +1204,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
         <div class="quiz-progress" id="quiz-dest-label" style="text-align:right;"></div>
       </div>
+      <div class="stop-picker" id="stop-picker"></div>
+      <p class="stop-picker-note">好きな番号のお題から撮影できます（済みの番号はもう選べません）</p>
       <div class="quiz-map-wrap">
         <div class="quiz-map" id="quiz-map"></div>
         <div class="map-legend">
@@ -1577,7 +1595,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       return;
     }
     state.destination = destResolved.name;
-    var wantCount = parseInt(document.getElementById('sel-duration').value, 10);
+    var wantCount = parseInt(document.getElementById('sel-count').value, 10);
     state.apiKey = DEFAULT_STREETVIEW_KEY;
     show('screen-loading');
     var loadingText = document.getElementById('loading-text');
@@ -1599,7 +1617,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         refreshRouteMaps();
 
         loadingText.textContent = '道中のストリートビューを確認しています…';
-        var candidateCount = Math.min(Math.max(wantCount*4, 8), 20);
+        var candidateCount = Math.min(Math.max(wantCount*4, 8), 48);
         var candidates = shuffle(sampleRoutePoints(route.coords, route.distance, candidateCount));
         var confirmed = [];
         var i = 0;
@@ -1660,15 +1678,47 @@ svg.leaflet-image-layer.leaflet-interactive path {
     renderQuiz();
   }
 
+  // 撮影済みのお題かどうか（自由な順番で撮影できるようにするための判定）
+  function isStopAnswered(i){
+    return state.results.some(function(r){ return r.stopIdx === i; });
+  }
+  function firstUnansweredIdx(){
+    for(var i=0; i<state.stops.length; i++){
+      if(!isStopAnswered(i)) return i;
+    }
+    return 0;
+  }
+  function renderStopPicker(){
+    var wrap = document.getElementById('stop-picker');
+    if(!wrap) return;
+    wrap.innerHTML = '';
+    state.stops.forEach(function(stop, i){
+      var done = isStopAnswered(i);
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'stop-chip' + (done ? ' done' : '') + (i === state.idx ? ' active' : '');
+      btn.textContent = done ? '✓' : String(i+1);
+      btn.disabled = done;
+      if(!done){
+        btn.addEventListener('click', function(){
+          state.idx = i;
+          renderQuiz();
+        });
+      }
+      wrap.appendChild(btn);
+    });
+  }
+
   function renderQuiz(){
     var lm = state.stops[state.idx];
     document.getElementById('quiz-index').textContent = state.idx+1;
-    document.getElementById('progress-fill').style.width = Math.round((state.idx)/state.stopsCount*100)+'%';
+    document.getElementById('progress-fill').style.width = Math.round(state.results.length/state.stopsCount*100)+'%';
     document.getElementById('quiz-img').src = lm.liveImg;
     document.getElementById('quiz-hint').textContent = lm.hint;
     document.getElementById('quiz-flavor').textContent = '『'+state.destination+'』へ向かう道中に、このお題が出現しました。（ストリートビュー実写）';
     document.getElementById('quiz-status').textContent = '';
     document.getElementById('file-input').value = '';
+    renderStopPicker();
     renderRouteMap('quiz-map');
   }
 
@@ -1716,6 +1766,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         var lm = state.stops[state.idx];
         var score = scoreForDistance(distance);
         state.results.push({
+          stopIdx: state.idx,
           key: lm.key, name: lm.name, fact: lm.fact,
           targetImg: lm.liveImg, isLive: true,
           targetLat: lm.lat, targetLng: lm.lng,
@@ -1866,16 +1917,16 @@ svg.leaflet-image-layer.leaflet-interactive path {
       scoreEl.textContent = cur;
     }, stepMs);
 
-    var isLast = state.idx >= state.stopsCount-1;
-    document.getElementById('btn-next').textContent = isLast ? '結果を見る' : 'つぎのお題へ';
+    var isLast = state.results.length >= state.stopsCount;
+    document.getElementById('btn-next').textContent = isLast ? '結果を見る' : 'べつのお題を探す';
   }
 
   document.getElementById('btn-next').addEventListener('click', function(){
-    if(state.idx >= state.stopsCount-1){
+    if(state.results.length >= state.stopsCount){
       renderResult();
       show('screen-result');
     } else {
-      state.idx++;
+      state.idx = firstUnansweredIdx();
       show('screen-quiz');
       renderQuiz();
     }
