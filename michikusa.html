@@ -230,6 +230,7 @@
     font-family:var(--sans); font-size:12.5px; cursor:pointer;
   }
   .dest-suggestion-btn:hover{border-color:var(--shu); color:var(--shu);}
+  .dest-suggestion-note{font-size:11.5px; color:var(--ink-faint); margin-top:4px;}
   select{
     width:100%; padding:13px 14px; border-radius:1px;
     background:var(--bg-2); border:1px solid var(--ink); color:var(--ink);
@@ -1332,20 +1333,32 @@ svg.leaflet-image-layer.leaflet-interactive path {
           statusEl.textContent = '見つかりませんでした。別のキーワードで試してください';
           return;
         }
-        statusEl.textContent = '候補から選んでください:';
-        list.forEach(function(item){
-          var li = document.createElement('li');
-          var btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = 'dest-suggestion-btn';
-          btn.textContent = item.display_name;
-          btn.addEventListener('click', function(){
-            var shortName = item.display_name.split(/[、,]/)[0];
-            selectDestination({name:shortName, lat:parseFloat(item.lat), lng:parseFloat(item.lon)});
-          });
-          li.appendChild(btn);
-          listEl.appendChild(li);
+        // 先頭候補を目的地として自動的に選択する（「出発する」がすぐ押せるように）。
+        // 違う場所だった場合は、下の一覧から選び直せる。
+        var top = list[0];
+        selectDestination({
+          name: top.display_name.split(/[、,]/)[0],
+          lat: parseFloat(top.lat), lng: parseFloat(top.lon)
         });
+        if(list.length > 1){
+          var note = document.createElement('li');
+          note.className = 'dest-suggestion-note';
+          note.textContent = '違う場所の場合はこちらから選び直してください:';
+          listEl.appendChild(note);
+          list.forEach(function(item){
+            var li = document.createElement('li');
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dest-suggestion-btn';
+            btn.textContent = item.display_name;
+            btn.addEventListener('click', function(){
+              var shortName = item.display_name.split(/[、,]/)[0];
+              selectDestination({name:shortName, lat:parseFloat(item.lat), lng:parseFloat(item.lon)});
+            });
+            li.appendChild(btn);
+            listEl.appendChild(li);
+          });
+        }
       })
       .catch(function(){
         statusEl.textContent = '検索できませんでした（通信環境をご確認ください）';
@@ -1461,24 +1474,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
     if(rm.line){ map.removeLayer(rm.line); rm.line = null; }
 
-    if(state.userGeo){
-      var userPt = [state.userGeo.lat, state.userGeo.lng];
-      if(rm.userMarker) map.removeLayer(rm.userMarker);
-      rm.userMarker = L.circleMarker(userPt, {
-        radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
-      }).addTo(map).bindTooltip('現在地', {permanent:false});
+    // 現在地が未取得でも、常に「（仮の）現在地→目的地」の最適経路を表示する
+    var origin = routeOrigin();
+    var originPt = [origin.lat, origin.lng];
+    if(rm.userMarker) map.removeLayer(rm.userMarker);
+    rm.userMarker = L.circleMarker(originPt, {
+      radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
+    }).addTo(map).bindTooltip(state.userGeo ? '現在地' : '現在地（未取得のため仮の位置）', {permanent:false});
 
-      var key = routeKeyFor(state.userGeo, dest);
-      var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
-      var lineCoords = useReal ? routeState.coords : [userPt, [dest.lat, dest.lng]];
-      rm.line = L.polyline(lineCoords, useReal
-        ? {color:'#15130f', weight:4, opacity:0.85}
-        : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}
-      ).addTo(map);
-      map.fitBounds(lineCoords, {padding:[30,30], maxZoom:15});
-    } else {
-      map.setView([dest.lat, dest.lng], 13);
-    }
+    var key = routeKeyFor(origin, dest);
+    var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
+    var lineCoords = useReal ? routeState.coords : [originPt, [dest.lat, dest.lng]];
+    rm.line = L.polyline(lineCoords, useReal
+      ? {color:'#15130f', weight:4, opacity:0.85}
+      : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}
+    ).addTo(map);
+    map.fitBounds(lineCoords, {padding:[30,30], maxZoom:15});
     setTimeout(function(){ map.invalidateSize(); }, 60);
   }
   function refreshRouteMaps(){
