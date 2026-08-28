@@ -1,6 +1,6 @@
 # みちくさ (michikusa)
 
-**🎮 公開URL: https://tt-prog-commits.github.io/HuckThon/matimiru/**
+**🎮 公開URL: https://tt-prog-commits.github.io/HuckThon/**
 
 移動中の暇な時間を「京都の道中で出会うお題スポットを探すゲーム」に変える、位置情報×ストリートビュー体験のプロトタイプです。
 
@@ -21,7 +21,7 @@
 2. 左メニューの **Pages** を選択
 3. **Build and deployment** の **Source** で `Deploy from a branch` を選択
 4. **Branch** を `main` / フォルダを `/ (root)` にして **Save**
-5. `index.html` が `matimiru/` フォルダの中にあるため、公開URLは `https://tt-prog-commits.github.io/HuckThon/matimiru/` になります(リポジトリ直下ではなく `matimiru/` が付く点に注意)
+5. `index.html` はリポジトリ直下にあるため、公開URLは `https://tt-prog-commits.github.io/HuckThon/` になります(サブフォルダは付きません)
 
 ## 企画書
 
