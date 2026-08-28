@@ -221,6 +221,21 @@
   }
   .geo-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
   .geo-status{font-size:12.5px; color:var(--text-faint); flex:1; min-width:140px;}
+  .dest-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+  .chip{
+    padding:6px 12px; border-radius:999px; border:1px solid var(--ink-faint);
+    background:var(--bg-2); color:var(--ink-dim); font-family:var(--label); font-size:11.5px;
+    cursor:pointer;
+  }
+  .chip:hover{border-color:var(--shu); color:var(--shu);}
+  .dest-status{margin:10px 2px 0; font-size:12px; color:var(--ink-dim); line-height:1.7;}
+  .dest-suggestions{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:6px;}
+  .dest-suggestion-btn{
+    width:100%; text-align:left; padding:9px 12px; border-radius:1px;
+    background:var(--bg-2); border:1px solid var(--ink-faint); color:var(--ink);
+    font-family:var(--sans); font-size:12.5px; cursor:pointer;
+  }
+  .dest-suggestion-btn:hover{border-color:var(--shu); color:var(--shu);}
   select{
     width:100%; padding:13px 14px; border-radius:1px;
     background:var(--bg-2); border:1px solid var(--ink); color:var(--ink);
@@ -275,6 +290,11 @@
   .quiz-progress{font-family:var(--label); font-size:12.5px; color:var(--ink-faint); letter-spacing:.08em; font-variant-numeric:tabular-nums;}
   .progress-track{height:3px; border-radius:0; background:var(--line-soft); overflow:hidden; margin-top:7px; width:140px;}
   .progress-fill{height:100%; background:var(--shu); transition:width .4s ease;}
+  .quiz-map-wrap{width:100%; margin-bottom:16px;}
+  .quiz-map{
+    width:100%; height:180px; border:1.5px solid var(--ink); background:var(--bg-2);
+  }
+  .quiz-map .leaflet-control-attribution{font-size:9px;}
   .photo-frame{
     position:relative; overflow:hidden;
     box-shadow:var(--shadow); border:1.5px solid var(--ink);
@@ -1094,16 +1114,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
       </div>
       <div class="field">
         <label>目的地</label>
-        <select id="sel-destination">
-          <option value="祇園・八坂神社周辺">祇園・八坂神社周辺</option>
-          <option value="嵐山">嵐山</option>
-          <option value="伏見稲荷大社">伏見稲荷大社</option>
-          <option value="銀閣寺・哲学の道">銀閣寺・哲学の道</option>
-          <option value="金閣寺">金閣寺</option>
-          <option value="宇治（平等院）">宇治（平等院）</option>
-          <option value="京都駅">京都駅</option>
-          <option value="おまかせで探索">おまかせで探索</option>
-        </select>
+        <div class="geo-row">
+          <input type="text" id="input-destination" placeholder="行き先を入力（例: 二条城、清水寺、嵐山 など）" autocomplete="off">
+          <button class="btn ghost small" id="btn-dest-search" type="button">検索</button>
+        </div>
+        <div class="dest-chips">
+          <button type="button" class="chip" data-dest="祇園・八坂神社">祇園・八坂神社</button>
+          <button type="button" class="chip" data-dest="嵐山">嵐山</button>
+          <button type="button" class="chip" data-dest="伏見稲荷大社">伏見稲荷大社</button>
+          <button type="button" class="chip" data-dest="金閣寺">金閣寺</button>
+          <button type="button" class="chip" data-dest="京都駅">京都駅</button>
+        </div>
+        <p class="dest-status" id="dest-status">目的地を入力して「検索」を押してください</p>
+        <ul class="dest-suggestions" id="dest-suggestions"></ul>
       </div>
       <div class="field">
         <label>移動時間の目安</label>
@@ -1125,7 +1148,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         移動時間が長いほど、道中で出会えるお題も増えます。じっくり探すもよし、駆け足で探すもよし。
       </div>
       <div class="field apikey-field">
-        <p class="apikey-note">道中のお題には、実際のストリートビュー写真を自動で使用します。取得できない場所では、同梱の京都写真がお題になります。</p>
+        <p class="apikey-note">道中のお題には、実際のストリートビュー写真のみを使用します。ストリートビューが見つからない地点は自動でスキップされます。</p>
       </div>
       <div class="setup-actions">
         <button class="btn" id="btn-depart">出発する →</button>
@@ -1161,7 +1184,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
         <div class="quiz-progress" id="quiz-dest-label" style="text-align:right;"></div>
       </div>
-      <div class="photo-frame duotone">
+      <div class="quiz-map-wrap">
+        <div class="quiz-map" id="quiz-map"></div>
+        <div class="map-legend">
+          <span><i class="dot dot-user"></i>現在地</span>
+          <span><i class="dot dot-target"></i>目的地</span>
+        </div>
+      </div>
+      <div class="photo-frame">
         <img class="quiz-img" id="quiz-img" src="" alt="お題の写真">
       </div>
       <p class="quiz-caption">この景色を探してください</p>
@@ -1264,60 +1294,118 @@ svg.leaflet-image-layer.leaflet-interactive path {
     results: []
   };
 
-  // ---------------- setup screen ----------------
-  // おおよその目的地の緯度経度（京都市内の目安地点。ルート地図のプレビュー用）
-  var DEST_COORDS = {
-    '祇園・八坂神社周辺': {lat:35.0037, lng:135.7788},
-    '嵐山': {lat:35.0094, lng:135.6683},
-    '伏見稲荷大社': {lat:34.9671, lng:135.7727},
-    '銀閣寺・哲学の道': {lat:35.0272, lng:135.7982},
-    '金閣寺': {lat:35.0394, lng:135.7292},
-    '宇治（平等院）': {lat:34.8842, lng:135.8083},
-    '京都駅': {lat:34.9858, lng:135.7588},
-    'おまかせで探索': {lat:35.0116, lng:135.7681}
-  };
-
-  // ---------------- route map (Leaflet + OpenStreetMap、APIキー不要) ----------------
-  var setupMap = null, setupUserMarker = null, setupDestMarker = null, setupRouteLine = null;
+  // ---------------- destination (自由入力で検索して指定) ----------------
+  var DEFAULT_DEST = {name:'京都駅', lat:34.9858, lng:135.7588};
+  var destResolved = null; // {name, lat, lng} — 検索して選んだ目的地
   function destCoord(){
-    var sel = document.getElementById('sel-destination');
-    var v = sel ? sel.value : '';
-    return DEST_COORDS[v] || DEST_COORDS['京都駅'];
+    return destResolved || DEFAULT_DEST;
   }
-  function renderSetupMap(){
-    var mapEl = document.getElementById('route-map');
+  function selectDestination(dest){
+    destResolved = dest;
+    state.destination = dest.name;
+    document.getElementById('dest-status').textContent = '目的地: ' + dest.name;
+    document.getElementById('dest-suggestions').innerHTML = '';
+    refreshRouteMaps();
+  }
+  function geocodeDestination(query){
+    var statusEl = document.getElementById('dest-status');
+    var listEl = document.getElementById('dest-suggestions');
+    listEl.innerHTML = '';
+    if(!query){ statusEl.textContent = '目的地を入力してください'; return; }
+    statusEl.textContent = '検索中…';
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=5&accept-language=ja&q='
+      + encodeURIComponent(query + ' 京都');
+    fetch(url, {headers:{'Accept':'application/json'}})
+      .then(function(res){ return res.json(); })
+      .then(function(list){
+        if(!list || !list.length){
+          statusEl.textContent = '見つかりませんでした。別のキーワードで試してください';
+          return;
+        }
+        statusEl.textContent = '候補から選んでください:';
+        list.forEach(function(item){
+          var li = document.createElement('li');
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'dest-suggestion-btn';
+          btn.textContent = item.display_name;
+          btn.addEventListener('click', function(){
+            var shortName = item.display_name.split(/[、,]/)[0];
+            selectDestination({name:shortName, lat:parseFloat(item.lat), lng:parseFloat(item.lon)});
+          });
+          li.appendChild(btn);
+          listEl.appendChild(li);
+        });
+      })
+      .catch(function(){
+        statusEl.textContent = '検索できませんでした（通信環境をご確認ください）';
+      });
+  }
+  document.getElementById('btn-dest-search').addEventListener('click', function(){
+    geocodeDestination(document.getElementById('input-destination').value.trim());
+  });
+  document.getElementById('input-destination').addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){ e.preventDefault(); geocodeDestination(this.value.trim()); }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(chip){
+    chip.addEventListener('click', function(){
+      var name = chip.getAttribute('data-dest');
+      document.getElementById('input-destination').value = name;
+      geocodeDestination(name);
+    });
+  });
+
+  // ---------------- route map (Leaflet + OpenStreetMap、APIキー不要。設定画面とお題画面で共通利用) ----------------
+  var routeMaps = {}; // 要素id -> {map, userMarker, destMarker, line}
+  function renderRouteMap(mapId){
+    var mapEl = document.getElementById(mapId);
     if(!mapEl || typeof L === 'undefined') return; // オフライン等でLeafletが読めない場合は地図欄を省略
     var dest = destCoord();
-    if(!setupMap){
-      setupMap = L.map(mapEl, {attributionControl:true, zoomControl:true});
+    var rm = routeMaps[mapId];
+    if(!rm){
+      var map = L.map(mapEl, {attributionControl:true, zoomControl:true});
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(setupMap);
+      }).addTo(map);
+      rm = routeMaps[mapId] = {map:map, userMarker:null, destMarker:null, line:null};
     }
-    if(setupDestMarker) setupMap.removeLayer(setupDestMarker);
-    setupDestMarker = L.circleMarker([dest.lat, dest.lng], {
+    var map = rm.map;
+    if(rm.destMarker) map.removeLayer(rm.destMarker);
+    rm.destMarker = L.circleMarker([dest.lat, dest.lng], {
       radius:9, color:'#faf9f6', weight:2, fillColor:'#c1321a', fillOpacity:1
-    }).addTo(setupMap).bindTooltip('目的地', {permanent:false});
+    }).addTo(map).bindTooltip('目的地', {permanent:false});
 
-    if(setupRouteLine){ setupMap.removeLayer(setupRouteLine); setupRouteLine = null; }
+    if(rm.line){ map.removeLayer(rm.line); rm.line = null; }
 
     if(state.userGeo){
       var userPt = [state.userGeo.lat, state.userGeo.lng];
-      if(setupUserMarker) setupMap.removeLayer(setupUserMarker);
-      setupUserMarker = L.circleMarker(userPt, {
+      if(rm.userMarker) map.removeLayer(rm.userMarker);
+      rm.userMarker = L.circleMarker(userPt, {
         radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
-      }).addTo(setupMap).bindTooltip('現在地', {permanent:false});
-      setupRouteLine = L.polyline([userPt, [dest.lat, dest.lng]], {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}).addTo(setupMap);
-      setupMap.fitBounds([userPt, [dest.lat, dest.lng]], {padding:[30,30], maxZoom:14});
+      }).addTo(map).bindTooltip('現在地', {permanent:false});
+      rm.line = L.polyline([userPt, [dest.lat, dest.lng]], {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}).addTo(map);
+      map.fitBounds([userPt, [dest.lat, dest.lng]], {padding:[30,30], maxZoom:15});
     } else {
-      setupMap.setView([dest.lat, dest.lng], 12);
+      map.setView([dest.lat, dest.lng], 13);
     }
-    setTimeout(function(){ if(setupMap) setupMap.invalidateSize(); }, 60);
+    setTimeout(function(){ map.invalidateSize(); }, 60);
+  }
+  function refreshRouteMaps(){
+    Object.keys(routeMaps).forEach(function(id){ renderRouteMap(id); });
   }
 
-  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderSetupMap(); });
-  document.getElementById('sel-destination').addEventListener('change', function(){ renderSetupMap(); });
+  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderRouteMap('route-map'); });
+
+  // ---------------- 現在地（初回取得後は継続して現在地を反映し、Googleマップのように地図を追従させる） ----------------
+  var geoWatchId = null;
+  function startGeoWatch(){
+    if(!navigator.geolocation || geoWatchId !== null) return;
+    geoWatchId = navigator.geolocation.watchPosition(function(pos){
+      state.userGeo = {lat:pos.coords.latitude, lng:pos.coords.longitude};
+      refreshRouteMaps();
+    }, function(){ /* 継続取得できない場合は最後に取得できた位置のまま表示を続ける */ }, {enableHighAccuracy:true, maximumAge:5000, timeout:10000});
+  }
 
   var geoStatus = document.getElementById('geo-status');
   document.getElementById('btn-geo').addEventListener('click', function(){
@@ -1329,7 +1417,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     navigator.geolocation.getCurrentPosition(function(pos){
       state.userGeo = {lat:pos.coords.latitude, lng:pos.coords.longitude};
       geoStatus.textContent = '取得しました ('+pos.coords.latitude.toFixed(3)+', '+pos.coords.longitude.toFixed(3)+')';
-      renderSetupMap();
+      refreshRouteMaps();
+      startGeoWatch();
     }, function(){
       geoStatus.textContent = '取得できませんでした（体験モードで進みます）';
     }, {timeout:8000});
@@ -1342,11 +1431,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
   function streetViewMetadataUrl(lat,lng,key){
     return 'https://maps.googleapis.com/maps/api/streetview/metadata?location='+lat+','+lng+
-      '&source=outdoor&key='+encodeURIComponent(key);
+      '&radius=300&source=outdoor&key='+encodeURIComponent(key);
   }
-  // Checks real Street View coverage for a landmark and attaches a live image URL when available.
-  // Falls back silently (lm.liveImg stays undefined) if there's no key, no coverage, or the
-  // request is blocked — the bundled Kyoto photo is always used as the safety net.
+  // 実在するストリートビューの写真だけをお題にするため、その地点付近（半径300m）に
+  // 実写パノラマがあるか確認し、あれば実写URLを添えて true を返す。なければ false。
   function resolveStopImage(lm, key){
     var heading = Math.floor(Math.random()*360);
     return fetch(streetViewMetadataUrl(lm.lat, lm.lng, key))
@@ -1354,31 +1442,59 @@ svg.leaflet-image-layer.leaflet-interactive path {
       .then(function(meta){
         if(meta && meta.status === 'OK'){
           lm.liveImg = streetViewImageUrl(lm.lat, lm.lng, heading, key);
+          return true;
         }
+        return false;
       })
-      .catch(function(){ /* no network / blocked / invalid key — use bundled photo */ });
+      .catch(function(){ return false; /* ネットワーク不可・キー不正・ブロックなど */ });
   }
 
   document.getElementById('btn-depart').addEventListener('click', function(){
-    state.destination = document.getElementById('sel-destination').value;
-    state.stopsCount = parseInt(document.getElementById('sel-duration').value, 10);
+    if(!destResolved){
+      document.getElementById('dest-status').textContent = '先に目的地を検索して選んでください';
+      return;
+    }
+    state.destination = destResolved.name;
+    var wantCount = parseInt(document.getElementById('sel-duration').value, 10);
     state.apiKey = DEFAULT_STREETVIEW_KEY;
-    state.stops = shuffle(DATA.landmarks).slice(0, state.stopsCount);
     show('screen-loading');
     var loadingText = document.getElementById('loading-text');
     loadingText.textContent = '現在地から経路を検索中…';
     setTimeout(function(){
-      loadingText.textContent = '道中からお題を選んでいます…';
+      loadingText.textContent = '道中のストリートビューを確認しています…';
     }, 1100);
 
     var afterSelect = function(){
-      if(state.apiKey){
-        loadingText.textContent = 'ストリートビュー画像を取得中…';
-        var checks = state.stops.map(function(lm){ return resolveStopImage(lm, state.apiKey); });
-        Promise.all(checks).then(initQuiz);
-      } else {
-        initQuiz();
+      if(!state.apiKey){
+        loadingText.textContent = 'ストリートビューのAPIキーが必要です。前の画面に戻ります…';
+        setTimeout(function(){ show('screen-setup'); }, 1800);
+        return;
       }
+      var candidates = shuffle(DATA.landmarks);
+      var confirmed = [];
+      var i = 0;
+      var tryNext = function(){
+        if(confirmed.length >= wantCount || i >= candidates.length){
+          finalize();
+          return;
+        }
+        var lm = candidates[i++];
+        resolveStopImage(lm, state.apiKey).then(function(ok){
+          if(ok) confirmed.push(lm);
+          tryNext();
+        });
+      };
+      var finalize = function(){
+        if(confirmed.length === 0){
+          loadingText.textContent = 'この付近のストリートビューが見つかりませんでした。目的地を変えてお試しください。';
+          setTimeout(function(){ show('screen-setup'); }, 2400);
+          return;
+        }
+        state.stops = confirmed;
+        state.stopsCount = confirmed.length;
+        initQuiz();
+      };
+      tryNext();
     };
     setTimeout(afterSelect, 2200);
   });
@@ -1406,16 +1522,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
     var lm = state.stops[state.idx];
     document.getElementById('quiz-index').textContent = state.idx+1;
     document.getElementById('progress-fill').style.width = Math.round((state.idx)/state.stopsCount*100)+'%';
-    var img = document.getElementById('quiz-img');
-    img.src = lm.liveImg || lm.img;
-    img.onerror = function(){ img.onerror = null; img.src = lm.img; document.querySelector('.photo-frame').classList.add('duotone'); };
-    // real Street View photos are shown in full colour; the bundled fallback photos keep the mystery duotone look
-    document.querySelector('.photo-frame').classList.toggle('duotone', !lm.liveImg);
+    document.getElementById('quiz-img').src = lm.liveImg;
     document.getElementById('quiz-hint').textContent = lm.hint;
-    document.getElementById('quiz-flavor').textContent = '『'+state.destination+'』へ向かう道中に、このお題が出現しました。'+
-      (lm.liveImg ? '（ストリートビュー実写）' : '');
+    document.getElementById('quiz-flavor').textContent = '『'+state.destination+'』へ向かう道中に、このお題が出現しました。（ストリートビュー実写）';
     document.getElementById('quiz-status').textContent = '';
     document.getElementById('file-input').value = '';
+    renderRouteMap('quiz-map');
   }
 
   function haversine(lat1,lng1,lat2,lng2){
@@ -1463,7 +1575,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         var score = scoreForDistance(distance);
         state.results.push({
           key: lm.key, name: lm.name, fact: lm.fact,
-          targetImg: lm.liveImg || lm.img, isLive: !!lm.liveImg,
+          targetImg: lm.liveImg, isLive: true,
           targetLat: lm.lat, targetLng: lm.lng,
           userImg: dataUrl, userGeo: userGeo,
           distance: distance, score: score, simulated: simulated
@@ -1562,7 +1674,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
     document.getElementById('reveal-user-img').src = r.userImg;
     var targetImgEl = document.getElementById('reveal-target-img');
     targetImgEl.src = r.targetImg;
-    targetImgEl.onerror = function(){ targetImgEl.onerror = null; targetImgEl.src = LM[r.key].img; };
 
     renderRevealMap(r);
     document.getElementById('reveal-map-open').href = directionsUrl(r.userGeo, r.targetLat, r.targetLng);
