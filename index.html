@@ -1514,8 +1514,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     state.results = [];
     document.getElementById('quiz-total').textContent = state.stopsCount;
     document.getElementById('quiz-dest-label').textContent = '目的地: ' + state.destination;
-    renderQuiz();
     show('screen-quiz');
+    renderQuiz();
   }
 
   function renderQuiz(){
@@ -1707,8 +1707,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
       show('screen-result');
     } else {
       state.idx++;
-      renderQuiz();
       show('screen-quiz');
+      renderQuiz();
     }
   });
 
