@@ -1269,6 +1269,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   <section class="screen" id="screen-reveal">
     <div class="reveal-wrap">
       <p class="eyebrow">Result</p>
+      <p class="quiz-progress" id="reveal-progress" style="margin:-6px 0 10px;"></p>
       <div class="reveal-photos">
         <div>
           <div class="ph"><img id="reveal-user-img" src="" alt="あなたの写真"></div>
@@ -1633,6 +1634,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     idx: 0,
     userGeo: null,
     results: [],
+    revealIdx: 0,
     groupMode: false,
     groupQuizStarted: false
   };
@@ -2003,6 +2005,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   function initQuiz(){
     state.idx = 0;
     state.results = [];
+    state.revealIdx = 0;
     document.getElementById('quiz-total').textContent = state.stopsCount;
     document.getElementById('quiz-dest-label').textContent = '目的地: ' + state.destination;
     show('screen-quiz');
@@ -2112,8 +2115,18 @@ svg.leaflet-image-layer.leaflet-interactive path {
             finished: state.results.length >= state.stopsCount
           });
         }
-        show('screen-reveal');
-        renderReveal();
+        if(state.results.length >= state.stopsCount){
+          // 全問撮影が完了 → ここから1つずつ答え合わせを表示
+          state.results.sort(function(a,b){ return a.stopIdx - b.stopIdx; });
+          state.revealIdx = 0;
+          show('screen-reveal');
+          renderReveal();
+        } else {
+          // まだ残りのお題がある → 撮影せず一覧画面に戻る
+          state.idx = firstUnansweredIdx();
+          show('screen-quiz');
+          renderQuiz();
+        }
       });
     };
     reader.readAsDataURL(file);
@@ -2229,7 +2242,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
 
   function renderReveal(){
-    var r = state.results[state.results.length-1];
+    var r = state.results[state.revealIdx];
+    document.getElementById('reveal-progress').textContent = '答え合わせ ' + (state.revealIdx+1) + ' / ' + state.results.length;
     document.getElementById('reveal-user-img').src = r.userImg;
     var targetImgEl = document.getElementById('reveal-target-img');
     targetImgEl.src = r.targetImg;
@@ -2256,23 +2270,20 @@ svg.leaflet-image-layer.leaflet-interactive path {
       scoreEl.textContent = cur;
     }, stepMs);
 
-    var isLast = state.results.length >= state.stopsCount;
-    document.getElementById('btn-next').textContent = isLast ? '結果を見る' : 'べつのお題を探す';
+    var isLast = state.revealIdx >= state.results.length-1;
+    document.getElementById('btn-next').textContent = isLast ? '結果を見る' : 'つぎの答え合わせへ';
   }
 
   document.getElementById('btn-next').addEventListener('click', function(){
-    if(state.results.length >= state.stopsCount){
-      if(state.groupMode){
-        renderGroupResult();
-        show('screen-group-result');
-      } else {
-        renderResult();
-        show('screen-result');
-      }
+    if(state.revealIdx < state.results.length-1){
+      state.revealIdx++;
+      renderReveal();
+    } else if(state.groupMode){
+      renderGroupResult();
+      show('screen-group-result');
     } else {
-      state.idx = firstUnansweredIdx();
-      show('screen-quiz');
-      renderQuiz();
+      renderResult();
+      show('screen-result');
     }
   });
 
