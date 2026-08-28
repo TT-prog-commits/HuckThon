@@ -404,6 +404,8 @@
   .map-legend .dot{width:9px; height:9px; border-radius:50%; display:inline-block; border:1.5px solid #fff; box-shadow:0 0 0 1px var(--ink);}
   .dot-user{background:var(--ink);}
   .dot-target{background:var(--shu);}
+  .map-legend .dot-origin{width:8px; height:8px; background:var(--bg); border:2px solid var(--ink); box-shadow:none;}
+  .map-legend .dot-dest{width:8px; height:8px; background:var(--bg); border:2px solid var(--shu); box-shadow:none;}
   .map-open-link{
     display:block; text-align:center; margin-top:10px; font-family:var(--label); font-size:11.5px;
     color:var(--ink-faint); text-decoration:underline; text-underline-offset:2px;
@@ -1233,6 +1235,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="map-legend">
           <span><i class="dot dot-user"></i>あなたの撮影地点</span>
           <span><i class="dot dot-target"></i>お題の地点</span>
+          <span><i class="dot dot-origin"></i>スタート地点</span>
+          <span><i class="dot dot-dest"></i>目的地</span>
         </div>
         <a class="map-open-link" id="reveal-map-open" href="#" target="_blank" rel="noopener">Googleマップで大きく開く</a>
       </div>
@@ -1381,18 +1385,23 @@ svg.leaflet-image-layer.leaflet-interactive path {
     var url = 'https://router.project-osrm.org/route/v1/foot/'
       + origin.lng + ',' + origin.lat + ';' + dest.lng + ',' + dest.lat
       + '?overview=full&geometries=geojson';
-    return fetch(url)
-      .then(function(res){ return res.json(); })
+    // OSRMの無料デモサーバーが混雑等で応答しない場合に備えて、8秒でタイムアウトして直線ルートに切り替える
+    var timeout = new Promise(function(resolve){
+      setTimeout(function(){ resolve({__timeout:true}); }, 8000);
+    });
+    return Promise.race([fetch(url).then(function(res){ return res.json(); }), timeout])
       .then(function(data){
+        if(data && data.__timeout){ throw new Error('osrm timeout'); }
         if(data && data.code === 'Ok' && data.routes && data.routes[0]){
           var r = data.routes[0];
           var coords = r.geometry.coordinates.map(function(c){ return [c[1], c[0]]; }); // [lng,lat] -> [lat,lng]
           return {coords: coords, distance: r.distance, isReal: true};
         }
-        throw new Error('no route');
+        throw new Error('no route: ' + (data && data.code));
       })
-      .catch(function(){
+      .catch(function(err){
         // ルート検索サービスが使えない場合は直線を仮のルートとして使う
+        if(window.console && console.warn) console.warn('[みちくさ] 徒歩ルート取得に失敗、直線で代用します:', err && err.message);
         return {coords: [[origin.lat, origin.lng], [dest.lat, dest.lng]], distance: haversine(origin.lat, origin.lng, dest.lat, dest.lng), isReal: false};
       });
   }
@@ -1485,6 +1494,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
   function refreshRouteMaps(){
     Object.keys(routeMaps).forEach(function(id){ renderRouteMap(id); });
+    if(lastRevealR){
+      var revealScreen = document.getElementById('screen-reveal');
+      if(revealScreen && revealScreen.classList.contains('active')) renderRevealMap(lastRevealR);
+    }
   }
 
   document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderRouteMap('route-map'); });
@@ -1758,17 +1771,45 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   // ---------------- reveal map (Leaflet + OpenStreetMap, no API key needed) ----------------
   var revealMap = null;
+  var lastRevealR = null; // 直近の答え合わせ結果。ルート取得が後から完了した時に再描画するために保持
   function renderRevealMap(r){
+    lastRevealR = r;
     var mapEl = document.getElementById('reveal-map');
     if(revealMap){ revealMap.remove(); revealMap = null; }
     if(typeof L === 'undefined') return; // library failed to load (e.g. offline) — map area stays blank, rest of the page still works
+    ensureRoute(); // スタート地点→目的地の最適経路（OSRM）を取得・再利用
 
     var target = [r.targetLat, r.targetLng];
+    var dest = destCoord();
+    var origin = routeOrigin();
+    var destPt = [dest.lat, dest.lng];
+    var originPt = [origin.lat, origin.lng];
+
     revealMap = L.map(mapEl, {attributionControl:true, zoomControl:true});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(revealMap);
+
+    var boundsPts = [target, destPt, originPt];
+
+    // スタート地点(現在地)→目的地：実際に歩ける最適経路（OSRM取得できていない間だけ直線で仮表示）
+    var key = routeKeyFor(origin, dest);
+    var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
+    var routeLineCoords = useReal ? routeState.coords : [originPt, destPt];
+    L.polyline(routeLineCoords, useReal
+      ? {color:'#15130f', weight:3, opacity:0.5}
+      : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.4}
+    ).addTo(revealMap);
+    if(useReal) boundsPts = boundsPts.concat(routeLineCoords);
+
+    L.circleMarker(originPt, {
+      radius:7, color:'#15130f', weight:2, fillColor:'#faf9f6', fillOpacity:1
+    }).addTo(revealMap).bindTooltip(state.userGeo ? 'スタート地点（現在地）' : 'スタート地点（未取得のため仮の位置）', {permanent:false});
+
+    L.circleMarker(destPt, {
+      radius:7, color:'#c1321a', weight:2, fillColor:'#faf9f6', fillOpacity:1
+    }).addTo(revealMap).bindTooltip('目的地: ' + dest.name, {permanent:false});
 
     var targetDot = L.circleMarker(target, {
       radius:9, color:'#faf9f6', weight:2, fillColor:'#c1321a', fillOpacity:1
@@ -1780,11 +1821,10 @@ svg.leaflet-image-layer.leaflet-interactive path {
         radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
       }).addTo(revealMap).bindTooltip('あなたの撮影地点', {permanent:false});
       L.polyline([userPt, target], {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}).addTo(revealMap);
-      revealMap.fitBounds([userPt, target], {padding:[36,36], maxZoom:15});
-    } else {
-      revealMap.setView(target, 14);
+      boundsPts.push(userPt);
     }
 
+    revealMap.fitBounds(boundsPts, {padding:[36,36], maxZoom:15});
     setTimeout(function(){ if(revealMap) revealMap.invalidateSize(); }, 60);
   }
 
