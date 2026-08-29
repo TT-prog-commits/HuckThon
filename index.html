@@ -2572,6 +2572,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       var dataUrl = ev.target.result;
       statusEl.textContent = '位置情報を確認中…';
       getGeoOrSimulate(function(distance, simulated, userGeo){
+        // ---- 成功時（このコールバックの中身は変更なし） ----
         var lm = state.stops[state.idx];
         var score = scoreForDistance(distance);
         var newResult = {
@@ -2635,35 +2636,56 @@ svg.leaflet-image-layer.leaflet-interactive path {
           show('screen-quiz');
           renderQuiz();
         }
+      }, function(retryMessage){
+        // ---- 位置情報が取得できなかった場合 → 採用せず、もう一度撮影を促す ----
+        statusEl.textContent = retryMessage;
+        document.getElementById('file-input').value = '';
       });
     };
     reader.readAsDataURL(file);
   });
 
-  function getGeoOrSimulate(cb){
+  // 位置情報を取得してスコア計算用の距離を返す。
+  // onRetry が指定されている場合、GPSが取得できなかった時は仮スコアで進めず、
+  // 撮影をやり直してもらう（onRetry にエラーメッセージを渡す）。
+  function getGeoOrSimulate(onSuccess, onRetry){
     var lm = state.stops[state.idx];
     if(!navigator.geolocation){
-      cb(simulateDistance(), true, null);
+      // この端末・ブラウザは位置情報に対応していないため、体験用の仮スコアで進行する
+      onSuccess(simulateDistance(), true, null);
       return;
     }
+    var GEO_TIMEOUT_MS = 10000;
     var done = false;
     var timer = setTimeout(function(){
       if(done) return;
       done = true;
-      cb(simulateDistance(), true, null);
-    }, 8000);
+      if(onRetry){
+        onRetry('10秒以内に位置情報を取得できませんでした。電波状況の良い場所で、もう一度撮影してください。');
+      } else {
+        onSuccess(simulateDistance(), true, null);
+      }
+    }, GEO_TIMEOUT_MS);
     navigator.geolocation.getCurrentPosition(function(pos){
       if(done) return;
       done = true;
       clearTimeout(timer);
       var d = haversine(pos.coords.latitude, pos.coords.longitude, lm.lat, lm.lng);
-      cb(d, false, {lat:pos.coords.latitude, lng:pos.coords.longitude});
-    }, function(){
+      onSuccess(d, false, {lat:pos.coords.latitude, lng:pos.coords.longitude});
+    }, function(err){
       if(done) return;
       done = true;
       clearTimeout(timer);
-      cb(simulateDistance(), true, null);
-    }, {timeout:7500, enableHighAccuracy:true});
+      if(onRetry){
+        if(err && err.code === 1){ // PERMISSION_DENIED
+          onRetry('位置情報の利用が許可されていません。ブラウザの設定で位置情報を許可してから、もう一度撮影してください。');
+        } else {
+          onRetry('位置情報を取得できませんでした。もう一度撮影してください。');
+        }
+      } else {
+        onSuccess(simulateDistance(), true, null);
+      }
+    }, {timeout:GEO_TIMEOUT_MS, enableHighAccuracy:true});
   }
 
   function fmtDist(d){
