@@ -487,11 +487,13 @@
   }
   .score-num{
     font-family:var(--serif); font-weight:800; font-variant-numeric:tabular-nums;
-    font-size:clamp(56px,14vw,80px); line-height:1; margin:0;
+    font-size:clamp(48px,12vw,72px); line-height:1; margin:0;
     background:linear-gradient(90deg, #ff3b3b, #ff9d3b, #ffe23b, #3bbf5b, #3bb4ff, #7a5cff, #ff3bcf);
     -webkit-background-clip:text; background-clip:text;
     color:transparent; -webkit-text-fill-color:transparent;
+    display:inline-block; transition:transform .26s cubic-bezier(.34,1.56,.64,1);
   }
+  .score-num.score-pop{ transform:scale(1.18); }
   .score-label{font-family:var(--label); font-size:14px; color:var(--ink); font-weight:700; letter-spacing:.06em; margin-top:2px;}
   .dist-line{font-family:var(--label); font-size:13.5px; color:var(--ink-dim); margin:20px 0 6px; font-variant-numeric:tabular-nums;}
   .sim-badge{
@@ -2557,12 +2559,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
 
   function scoreForDistance(d){
-    if(d<=5) return 100;
-    if(d<=10) return 90;
-    if(d<=25) return 75;
-    if(d<=50) return 50;
-    if(d<=100) return 25;
-    return 0;
+    // 1000点満点。1m離れるごとに1点マイナス（0点が下限）。
+    return Math.max(0, Math.round(1000 - d));
   }
 
   function simulateDistance(){
@@ -2685,11 +2683,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
 
   function scoreLabel(score){
-    if(score>=100) return 'パーフェクト！大正解！';
-    if(score>=90) return 'ナイス！かなり近い！';
-    if(score>=75) return 'いい線いってる！';
-    if(score>=50) return 'おしい！もう少し！';
-    if(score>=25) return '近くまで来てた！';
+    if(score>=990) return 'パーフェクト！大正解！';
+    if(score>=950) return 'ナイス！かなり近い！';
+    if(score>=900) return 'いい線いってる！';
+    if(score>=750) return 'おしい！もう少し！';
+    if(score>=500) return '近くまで来てた！';
     return '圏外…でもナイストライ！';
   }
 
@@ -2763,7 +2761,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
 
   var revealJudgeTimer = null;
-  var revealScoreTimer = null;
+  var scoreAnimFrame = null;
   function renderReveal(){
     var r = state.results[state.revealIdx];
     document.getElementById('reveal-progress').textContent = '答え合わせ ' + (state.revealIdx+1) + ' / ' + state.results.length;
@@ -2798,20 +2796,33 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
     // 一瞬の「採点中…」の溜めを作ってから、答え合わせをフェードインで表示する
     clearTimeout(revealJudgeTimer);
-    clearInterval(revealScoreTimer);
+    cancelAnimationFrame(scoreAnimFrame);
     revealJudgeTimer = setTimeout(function(){
       judgingNote.classList.remove('active');
       revealContent.classList.add('shown');
       if(revealMap) setTimeout(function(){ revealMap.invalidateSize(); }, 60);
-      var target = r.score;
-      var cur = 0;
-      var stepMs = 18;
-      revealScoreTimer = setInterval(function(){
-        cur += 4;
-        if(cur>=target){ cur = target; clearInterval(revealScoreTimer); }
-        scoreEl.textContent = cur;
-      }, stepMs);
+      animateScoreCountUp(scoreEl, r.score, 1100);
     }, 850);
+  }
+
+  // スコアを0から目標値まで、イーズアウトしながらカウントアップさせる（何点満点でも一定時間で完了）
+  function animateScoreCountUp(el, target, durationMs){
+    var start = null;
+    function tick(ts){
+      if(start===null) start = ts;
+      var progress = Math.min(1, (ts-start)/durationMs);
+      var eased = 1 - Math.pow(1-progress, 3); // ease-out cubic
+      var cur = Math.round(target*eased);
+      el.textContent = cur;
+      if(progress < 1){
+        scoreAnimFrame = requestAnimationFrame(tick);
+      } else {
+        el.textContent = target;
+        el.classList.add('score-pop');
+        setTimeout(function(){ el.classList.remove('score-pop'); }, 260);
+      }
+    }
+    scoreAnimFrame = requestAnimationFrame(tick);
   }
 
   document.getElementById('btn-next').addEventListener('click', function(){
@@ -2834,9 +2845,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   function renderResult(){
     var total = state.results.reduce(function(s,r){return s+r.score;}, 0);
-    var max = state.stopsCount*100;
+    var max = state.stopsCount*1000;
     var pct = total/max;
-    document.getElementById('total-score').textContent = total;
+    var totalScoreEl = document.getElementById('total-score');
+    totalScoreEl.textContent = '0';
+    animateScoreCountUp(totalScoreEl, total, 1200);
     var rank = pct>=0.9 ? 'S' : pct>=0.7 ? 'A' : pct>=0.45 ? 'B' : 'C';
     document.getElementById('rank-badge').textContent = rank;
     var list = document.getElementById('result-list');
