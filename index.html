@@ -411,17 +411,25 @@
   .quiz-progress{font-family:var(--label); font-size:12.5px; color:var(--ink-faint); letter-spacing:.08em; font-variant-numeric:tabular-nums;}
   .progress-track{height:3px; border-radius:0; background:var(--line-soft); overflow:hidden; margin-top:7px; width:140px;}
   .progress-fill{height:100%; background:var(--shu); transition:width .4s ease;}
-  .stop-picker{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;}
-  .stop-chip{
-    width:34px; height:34px; border-radius:50%; border:1.5px solid var(--ink);
-    background:var(--bg-2); color:var(--ink); font-family:var(--label); font-size:13px;
-    font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+  .stop-picker-label{
+    font-family:var(--label); font-size:12.5px; letter-spacing:.1em; color:var(--gold);
+    font-weight:700; margin:0 0 8px;
   }
-  .stop-chip:hover:not(:disabled){border-color:var(--shu); color:var(--shu);}
-  .stop-chip.answered{border-color:var(--shu); color:var(--shu);}
-  .stop-chip.active{background:var(--ink); color:var(--bg); border-color:var(--ink);}
-  .stop-chip.done{background:var(--bg-2); border-color:var(--ink-faint); color:var(--ink-faint); cursor:default;}
-  .stop-picker-note{font-size:11.5px; color:var(--ink-faint); margin:0 0 16px; line-height:1.7;}
+  .stop-picker{display:flex; flex-wrap:wrap; gap:10px; margin-bottom:8px;}
+  .stop-chip{
+    width:40px; height:40px; border-radius:50%; border:1.5px solid var(--ink);
+    background:var(--bg-2); color:var(--ink); font-family:var(--label); font-size:14px;
+    font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+    box-shadow:0 2px 6px rgba(21,19,15,0.12); transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .stop-chip:hover:not(:disabled){border-color:var(--shu); color:var(--shu); transform:translateY(-2px);}
+  .stop-chip.answered{border-color:var(--shu); color:var(--shu); background:#fff3ea;}
+  .stop-chip.active{
+    background:linear-gradient(135deg, #e6942a, #c1321a); color:#fffaf0; border-color:#9c2712;
+    box-shadow:0 3px 10px rgba(120,32,10,0.35);
+  }
+  .stop-chip.done{background:var(--bg-2); border-color:var(--ink-faint); color:var(--ink-faint); cursor:default; box-shadow:none;}
+  .stop-picker-note{font-size:12px; color:var(--ink-dim); margin:0 0 16px; line-height:1.7;}
   .quiz-map-wrap{width:100%; margin-bottom:16px;}
   .quiz-map{
     width:100%; height:180px; border:1.5px solid var(--ink); background:var(--bg-2);
@@ -576,6 +584,16 @@
   .dot-target{background:var(--shu);}
   .map-legend .dot-origin{width:8px; height:8px; background:var(--bg); border:2px solid var(--ink); box-shadow:none;}
   .map-legend .dot-dest{width:8px; height:8px; background:var(--bg); border:2px solid var(--shu); box-shadow:none;}
+  .map-legend .dot-heading{
+    width:0; height:0; border-radius:0; box-shadow:none; border:none;
+    border-left:5px solid transparent; border-right:5px solid transparent; border-bottom:9px solid var(--shu);
+  }
+  /* 現在地マーカーの上に重ねる、スマホが向いている方角を示す矢印（コンパス対応端末のみ表示） */
+  .heading-marker-icon{ background:none; border:none; }
+  .heading-arrow{
+    width:28px; height:28px; display:flex; align-items:center; justify-content:center;
+    transition:transform .15s linear; transform-origin:50% 50%;
+  }
   .map-open-link{
     display:block; text-align:center; margin-top:10px; font-family:var(--label); font-size:11.5px;
     color:var(--ink-faint); text-decoration:underline; text-underline-offset:2px;
@@ -1316,6 +1334,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="map-legend">
           <span><i class="dot dot-user"></i>現在地</span>
           <span><i class="dot dot-target"></i>目的地</span>
+          <span><i class="dot dot-heading"></i>向いている方向</span>
         </div>
         <p class="map-click-hint">地図をクリックしても目的地を選べます</p>
       </div>
@@ -1356,13 +1375,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
         </div>
         <div class="quiz-progress" id="quiz-dest-label" style="text-align:right;"></div>
       </div>
+      <p class="stop-picker-label">見る写真を切り替える（番号をタップ）</p>
       <div class="stop-picker" id="stop-picker"></div>
-      <p class="stop-picker-note" id="stop-picker-note">好きな番号の写真から撮影できます（済みの番号はもう選べません）</p>
+      <p class="stop-picker-note" id="stop-picker-note">好きな番号をタップすると、その写真に切り替わります（済みの番号はもう選べません）</p>
       <div class="quiz-map-wrap">
         <div class="quiz-map" id="quiz-map"></div>
         <div class="map-legend">
           <span><i class="dot dot-user"></i>現在地</span>
           <span><i class="dot dot-target"></i>目的地</span>
+          <span><i class="dot dot-heading"></i>向いている方向</span>
         </div>
       </div>
       <div class="photo-frame" id="photo-frame">
@@ -1938,7 +1959,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
   document.getElementById('btn-room-start').addEventListener('click', function(){
     if(!group.isHost) return;
     show('screen-setup');
-    renderRouteMap('route-map');
+    renderRouteMap('route-map', true);
     autoRequestGeoOnce();
   });
 
@@ -2019,7 +2040,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     revealIdx: 0,
     groupMode: false,
     groupQuizStarted: false,
-    groupRevealStarted: false
+    groupRevealStarted: false,
+    blackoutCache: {} // 対戦モード: お題ごとに一度決めた黒丸の配置を覚えておき、切り替えても動かさない
   };
 
   // ---------------- destination (自由入力で検索して指定) ----------------
@@ -2033,7 +2055,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     state.destination = dest.name;
     document.getElementById('dest-status').textContent = '目的地: ' + dest.name;
     document.getElementById('dest-suggestions').innerHTML = '';
-    refreshRouteMaps();
+    refreshRouteMaps(true);
   }
   // 地図クリックで選んだ地点の名前を逆ジオコーディングで取得し、目的地として選択する
   function reverseGeocodeForDest(lat, lng){
@@ -2136,7 +2158,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
     return origin.lat.toFixed(3)+','+origin.lng.toFixed(3)+'|'+dest.lat.toFixed(3)+','+dest.lng.toFixed(3);
   }
   function fetchRoute(origin, dest){
-    var url = 'https://router.project-osrm.org/route/v1/foot/'
+    // 注: router.project-osrm.org の /foot/ は実質「車ルート(driving)」と同じ結果を返し、
+    // 一方通行の車道ルールに従って遠回りしてしまうことを確認済み。
+    // routing.openstreetmap.de の routed-foot は本当に歩行者用プロファイルで計算されており、
+    // 徒歩の近道（一方通行を無視した経路）がちゃんと選ばれる。
+    var url = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot/'
       + origin.lng + ',' + origin.lat + ';' + dest.lng + ',' + dest.lat
       + '?overview=full&geometries=geojson';
     // OSRMの無料デモサーバーが混雑等で応答しない場合に備えて、8秒でタイムアウトして直線ルートに切り替える
@@ -2200,18 +2226,19 @@ svg.leaflet-image-layer.leaflet-interactive path {
       routeState.distance = result.distance;
       routeState.isReal = result.isReal;
       routeState.loading = false;
-      refreshRouteMaps();
+      refreshRouteMaps(true);
     });
   }
 
   // ---------------- route map (Leaflet + OpenStreetMap、APIキー不要。設定画面とお題画面で共通利用) ----------------
   var routeMaps = {}; // 要素id -> {map, userMarker, destMarker, line}
-  function renderRouteMap(mapId){
+  function renderRouteMap(mapId, forceFit){
     var mapEl = document.getElementById(mapId);
     if(!mapEl || typeof L === 'undefined') return; // オフライン等でLeafletが読めない場合は地図欄を省略
     ensureRoute();
     var dest = destCoord();
     var rm = routeMaps[mapId];
+    var isNewMap = !rm; // 新規作成時は必ず全体が見えるようにフィットさせる
     if(!rm){
       var map = L.map(mapEl, {attributionControl:true, zoomControl:true});
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -2241,6 +2268,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     rm.userMarker = L.circleMarker(originPt, {
       radius:9, color:'#faf9f6', weight:2, fillColor:'#15130f', fillOpacity:1
     }).addTo(map).bindTooltip(state.userGeo ? '現在地' : '現在地（未取得のため仮の位置）', {permanent:false});
+    updateHeadingMarker(rm); // 向いている方向の矢印も、現在地マーカーと同じ位置に合わせておく
 
     var key = routeKeyFor(origin, dest);
     var useReal = !!(routeState.coords && routeState.key === key && routeState.isReal);
@@ -2249,18 +2277,22 @@ svg.leaflet-image-layer.leaflet-interactive path {
       ? {color:'#15130f', weight:4, opacity:0.85}
       : {color:'#15130f', weight:2, dashArray:'4 6', opacity:0.7}
     ).addTo(map);
-    map.fitBounds(lineCoords, {padding:[30,30], maxZoom:15});
+    // 現在地の更新（GPS追従）やお題の切り替えのたびに拡大・移動をリセットしてしまうと操作しづらいので、
+    // 地図を新規に作った時、または明示的にフィットが必要な場面（目的地変更・ルート確定時など）だけ視点を合わせる。
+    if(isNewMap || forceFit){
+      map.fitBounds(lineCoords, {padding:[30,30], maxZoom:15});
+    }
     setTimeout(function(){ map.invalidateSize(); }, 60);
   }
-  function refreshRouteMaps(){
-    Object.keys(routeMaps).forEach(function(id){ renderRouteMap(id); });
+  function refreshRouteMaps(forceFit){
+    Object.keys(routeMaps).forEach(function(id){ renderRouteMap(id, forceFit); });
     if(lastRevealR){
       var revealScreen = document.getElementById('screen-reveal');
       if(revealScreen && revealScreen.classList.contains('active')) renderRevealMap(lastRevealR);
     }
   }
 
-  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderRouteMap('route-map'); autoRequestGeoOnce(); });
+  document.getElementById('btn-start').addEventListener('click', function(){ show('screen-setup'); renderRouteMap('route-map', true); autoRequestGeoOnce(); });
 
   // ---------------- 現在地（初回取得後は継続して現在地を反映し、Googleマップのように地図を追従させる） ----------------
   var geoWatchId = null;
@@ -2280,7 +2312,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     navigator.geolocation.getCurrentPosition(function(pos){
       geoRequestInFlight = false;
       state.userGeo = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-      refreshRouteMaps();
+      refreshRouteMaps(true);
       startGeoWatch();
     }, function(){
       geoRequestInFlight = false; // 取得できなくても体験モードでそのまま進める
@@ -2288,8 +2320,76 @@ svg.leaflet-image-layer.leaflet-interactive path {
   }
   // 画面に入った時点で自動的に現在地取得を試みる（取得済み・取得中なら何もしない）
   function autoRequestGeoOnce(){
+    startCompassWatch();
     if(state.userGeo) return;
     requestGeo();
+  }
+
+  // ---------------- 向いている方向（コンパス） ----------------
+  // 端末が対応していれば、地図上の現在地マーカーに矢印を重ねて向きを表示する。
+  // 対応状況やキャリブレーションは端末・ブラウザ依存のため、あくまで目安表示。
+  var deviceHeading = null; // 0-360度、0=北、時計回り
+  var compassWatchStarted = false;
+  var lastHeadingUpdateAt = 0;
+  function handleOrientationEvent(e){
+    var heading = null;
+    if(typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)){
+      heading = e.webkitCompassHeading; // iOS Safari: 0=北、時計回りで取得済み
+    } else if(typeof e.alpha === 'number' && !isNaN(e.alpha)){
+      heading = 360 - e.alpha; // Android等: 画面回転やセンサー精度により誤差が出ることがある
+    }
+    if(heading === null) return;
+    heading = ((heading % 360) + 360) % 360;
+    var now = Date.now();
+    if(now - lastHeadingUpdateAt < 120) return; // 更新頻度を間引いてカクつきを抑える
+    lastHeadingUpdateAt = now;
+    deviceHeading = heading;
+    updateAllHeadingMarkers();
+  }
+  function startCompassWatch(){
+    if(compassWatchStarted) return;
+    compassWatchStarted = true;
+    if(typeof DeviceOrientationEvent === 'undefined') return; // 非対応環境では方角表示なしで続行
+    if(typeof DeviceOrientationEvent.requestPermission === 'function'){
+      // iOS 13+ はユーザー操作の直後でないと許可ダイアログを出せない
+      DeviceOrientationEvent.requestPermission().then(function(result){
+        if(result === 'granted'){
+          window.addEventListener('deviceorientationabsolute', handleOrientationEvent, true);
+          window.addEventListener('deviceorientation', handleOrientationEvent, true);
+        }
+      }).catch(function(){ /* 許可されなかった場合は方角表示なしで続行 */ });
+    } else {
+      window.addEventListener('deviceorientationabsolute', handleOrientationEvent, true);
+      window.addEventListener('deviceorientation', handleOrientationEvent, true);
+    }
+  }
+  function headingArrowHtml(){
+    return '<div class="heading-arrow" style="transform:rotate('+deviceHeading.toFixed(0)+'deg)">'
+      + '<svg width="26" height="26" viewBox="0 0 26 26"><path d="M13 1 L21.5 23 L13 17.5 L4.5 23 Z" fill="var(--shu, #c1321a)" stroke="#fffaf0" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+      + '</div>';
+  }
+  function updateHeadingMarker(rm){
+    if(!rm || !rm.map) return;
+    if(deviceHeading === null){
+      if(rm.headingMarker){ rm.map.removeLayer(rm.headingMarker); rm.headingMarker = null; }
+      return;
+    }
+    var origin = routeOrigin();
+    var latlng = [origin.lat, origin.lng];
+    if(!rm.headingMarker){
+      rm.headingMarker = L.marker(latlng, {
+        icon: L.divIcon({className:'heading-marker-icon', html: headingArrowHtml(), iconSize:[26,26], iconAnchor:[13,13]}),
+        interactive:false, keyboard:false, zIndexOffset:500
+      }).addTo(rm.map);
+      return;
+    }
+    rm.headingMarker.setLatLng(latlng);
+    var el = rm.headingMarker.getElement();
+    var arrowEl = el && el.querySelector('.heading-arrow');
+    if(arrowEl){ arrowEl.style.transform = 'rotate('+deviceHeading.toFixed(0)+'deg)'; }
+  }
+  function updateAllHeadingMarkers(){
+    Object.keys(routeMaps).forEach(function(id){ updateHeadingMarker(routeMaps[id]); });
   }
 
   // ---------------- Street View ----------------
@@ -2386,7 +2486,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         routeState.coords = route.coords;
         routeState.distance = route.distance;
         routeState.isReal = route.isReal;
-        refreshRouteMaps();
+        refreshRouteMaps(true);
 
         loadingText.textContent = '道中のストリートビューを確認しています…';
         var candidateCount = Math.min(Math.max(wantCount*4, 8), 48);
@@ -2458,6 +2558,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     state.results = [];
     state.revealIdx = 0;
     state.groupRevealStarted = false;
+    state.blackoutCache = {};
     document.getElementById('quiz-total').textContent = state.stopsCount;
     document.getElementById('quiz-dest-label').textContent = '目的地: ' + state.destination;
     if(state.groupMode && group.roomCode) saveRecentRoom(group.roomCode, state.destination);
@@ -2522,9 +2623,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
   // 対戦モード限定: モザイク（のぞき窓）に加えて、絶対に見えない黒丸ゾーンを作る。
   // プレイヤーごとに（各自の端末でMath.random()を使うため）配置が異なり、
   // 合計で画面の半分以上を覆うまで円を追加し続ける。
-  function renderPhotoBlackout(){
+  // 同じお題を何度見ても円の位置が動かないよう、お題ごとに一度決めた配置をキャッシュする。
+  function renderPhotoBlackout(cacheKey){
     var svg = document.getElementById('photo-blackout');
     if(!svg) return;
+    if(cacheKey !== undefined && state.blackoutCache[cacheKey]){
+      svg.innerHTML = state.blackoutCache[cacheKey];
+      return;
+    }
     var W = 400, H = 300;
     var GRID_X = 40, GRID_Y = 30; // 被覆率を近似計算するためのサンプル格子
     var covered = new Array(GRID_X*GRID_Y).fill(false);
@@ -2562,9 +2668,11 @@ svg.leaflet-image-layer.leaflet-interactive path {
       }
     }
 
-    svg.innerHTML = circles.map(function(c){
+    var html = circles.map(function(c){
       return '<circle cx="'+c.cx.toFixed(1)+'" cy="'+c.cy.toFixed(1)+'" r="'+c.r.toFixed(1)+'"></circle>';
     }).join('');
+    svg.innerHTML = html;
+    if(cacheKey !== undefined){ state.blackoutCache[cacheKey] = html; }
   }
 
   function renderQuiz(){
@@ -2579,15 +2687,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
     var frame = document.getElementById('photo-frame');
     if(state.groupMode){
       frame.classList.add('veiled');
-      renderPhotoBlackout();
+      renderPhotoBlackout(state.idx);
     } else {
       frame.classList.remove('veiled');
     }
     var pickerNote = document.getElementById('stop-picker-note');
     if(pickerNote){
       pickerNote.textContent = state.groupMode
-        ? '好きな番号の写真から撮影できます（全員が撮り終わるまで、何度でも撮り直しできます）'
-        : '好きな番号の写真から撮影できます（済みの番号はもう選べません）';
+        ? '好きな番号をタップすると、その写真に切り替わります（✓は撮影済み。全員が撮り終わるまで何度でも撮り直しできます）'
+        : '好きな番号をタップすると、その写真に切り替わります（済みの番号はもう選べません）';
     }
     renderStopPicker();
     renderRouteMap('quiz-map');
@@ -2938,7 +3046,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   document.getElementById('btn-replay').addEventListener('click', function(){
     show('screen-setup');
-    renderRouteMap('route-map');
+    renderRouteMap('route-map', true);
     autoRequestGeoOnce();
   });
   document.getElementById('btn-result-home').addEventListener('click', function(){
