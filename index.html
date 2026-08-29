@@ -358,11 +358,32 @@
   .history-empty{font-size:12.5px; color:var(--ink-faint); padding:10px 2px;}
   .room-history-picker{display:flex; flex-wrap:wrap; gap:8px; margin:8px 0;}
   .room-history-chip{
-    padding:6px 12px; border-radius:999px; border:1px solid var(--ink-faint);
-    background:var(--bg-2); color:var(--ink-dim); font-family:var(--label); font-size:11.5px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:4px;
+    padding:4px 4px 4px 12px; border-radius:999px; border:1px solid var(--ink-faint);
+    background:var(--bg-2); color:var(--ink-dim); font-family:var(--label); font-size:11.5px;
   }
   .room-history-chip:hover{border-color:var(--shu); color:var(--shu);}
   .room-history-chip.active{background:var(--ink); color:#faf9f6; border-color:var(--ink);}
+  .room-history-chip-label{
+    appearance:none; border:none; background:transparent; padding:2px 0; margin:0;
+    font:inherit; color:inherit; cursor:pointer;
+  }
+  .room-history-chip-del{
+    appearance:none; border:none; cursor:pointer; flex-shrink:0;
+    width:18px; height:18px; border-radius:50%; font-size:12px; line-height:1; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:rgba(21,19,15,0.08); color:inherit; opacity:.75;
+    transition:background .15s ease, color .15s ease, opacity .15s ease;
+  }
+  .room-history-chip-del:hover{ background:var(--shu); color:#fff; opacity:1; }
+  .h-delete{
+    flex-shrink:0; width:26px; height:26px; border-radius:50%;
+    appearance:none; border:1px solid var(--ink-faint); background:var(--bg);
+    color:var(--ink-faint); font-size:14px; line-height:1; cursor:pointer; padding:0;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .h-delete:hover{ background:var(--shu); color:#fff; border-color:var(--shu); }
 
   /* ---------- LOADING ---------- */
   .loading-wrap{
@@ -1600,6 +1621,13 @@ svg.leaflet-image-layer.leaflet-interactive path {
       window.localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
     }catch(e){ /* 容量オーバー等は無視（記録は補助的な機能のため） */ }
   }
+  function deleteHistoryEntry(index){
+    try{
+      var list = loadHistory();
+      list.splice(index, 1);
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    }catch(e){ /* 無視 */ }
+  }
 
   var RECENT_ROOMS_KEY = 'michikusa_recent_rooms';
   var RECENT_ROOMS_MAX = 10;
@@ -1614,6 +1642,12 @@ svg.leaflet-image-layer.leaflet-interactive path {
       var list = loadRecentRooms().filter(function(r){ return r.code !== code; });
       list.unshift({code:code, destination:destination||'', ts:Date.now()});
       if(list.length > RECENT_ROOMS_MAX) list = list.slice(0, RECENT_ROOMS_MAX);
+      window.localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(list));
+    }catch(e){ /* 無視 */ }
+  }
+  function deleteRecentRoom(code){
+    try{
+      var list = loadRecentRooms().filter(function(r){ return r.code !== code; });
       window.localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(list));
     }catch(e){ /* 無視 */ }
   }
@@ -1668,10 +1702,21 @@ svg.leaflet-image-layer.leaflet-interactive path {
       wrap.innerHTML = '<p class="history-empty">まだ記録がありません。遊んでみましょう。</p>';
       return;
     }
-    list.forEach(function(h){
+    list.forEach(function(h, index){
       var row = document.createElement('div');
       row.className = 'history-row';
       row.innerHTML = historyRowHtml(h, false);
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'h-delete';
+      delBtn.setAttribute('aria-label', 'この記録を削除');
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', function(){
+        if(!confirm('この記録を削除しますか？（元に戻せません）')) return;
+        deleteHistoryEntry(index);
+        renderMyHistory();
+      });
+      row.appendChild(delBtn);
       wrap.appendChild(row);
     });
   }
@@ -1713,15 +1758,29 @@ svg.leaflet-image-layer.leaflet-interactive path {
       return;
     }
     rooms.forEach(function(r, i){
-      var chip = document.createElement('button');
-      chip.type = 'button';
+      var chip = document.createElement('div');
       chip.className = 'room-history-chip' + (i===0 ? ' active' : '');
-      chip.textContent = (r.destination || r.code) + '（' + r.code + '）';
-      chip.addEventListener('click', function(){
+      var label = document.createElement('button');
+      label.type = 'button';
+      label.className = 'room-history-chip-label';
+      label.textContent = (r.destination || r.code) + '（' + r.code + '）';
+      label.addEventListener('click', function(){
         Array.prototype.forEach.call(wrap.querySelectorAll('.room-history-chip'), function(c){ c.classList.remove('active'); });
         chip.classList.add('active');
         loadRoomHistory(r.code);
       });
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'room-history-chip-del';
+      delBtn.setAttribute('aria-label', 'このルームを記録一覧から削除');
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', function(){
+        if(!confirm('このルームを記録一覧から削除しますか？（自分の端末上の一覧から削除されます）')) return;
+        deleteRecentRoom(r.code);
+        renderRoomHistoryPicker();
+      });
+      chip.appendChild(label);
+      chip.appendChild(delBtn);
       wrap.appendChild(chip);
     });
     loadRoomHistory(rooms[0].code);
