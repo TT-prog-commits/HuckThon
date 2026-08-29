@@ -46,7 +46,12 @@
     margin:0;
     font-family:var(--sans);
     color:var(--text);
-    background:var(--bg);
+    background-color:var(--bg);
+    background-image:
+      radial-gradient(circle at 50% 100%, transparent 62%, rgba(193,50,26,0.14) 63%, rgba(193,50,26,0.14) 66%, transparent 67%),
+      radial-gradient(circle at 50% 100%, transparent 40%, rgba(193,50,26,0.10) 41%, rgba(193,50,26,0.10) 44%, transparent 45%);
+    background-size: 46px 46px;
+    background-position: 0 0, 23px 23px;
     min-height:100vh;
     overflow-x:hidden;
   }
@@ -225,7 +230,6 @@
     margin-bottom:10px; font-weight:700;
   }
   .geo-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
-  .geo-status{font-size:12.5px; color:var(--text-faint); flex:1; min-width:140px;}
   .dest-chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
   .chip{
     padding:6px 12px; border-radius:999px; border:1px solid var(--ink-faint);
@@ -270,11 +274,6 @@
     margin:10px 2px 0; font-size:11.5px; line-height:1.8; color:var(--ink-faint);
   }
   .setup-actions{margin-top:8px; display:flex; justify-content:center;}
-  .route-preview{
-    margin-top:14px; padding:14px 16px; border-radius:1px;
-    background:var(--bg-2); border:1px dashed var(--ink-faint);
-    font-size:12.5px; color:var(--ink-dim); line-height:1.8;
-  }
   .route-map-wrap{margin-top:22px;}
   .route-map{
     width:100%; height:200px; border:1.5px solid var(--ink); background:var(--bg-2);
@@ -1219,13 +1218,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
     <p class="subheading">現在地は自動で取得します。行き先を決めれば、すぐに出発できます。</p>
     <div class="card setup-card">
       <div class="field">
-        <label>現在地</label>
-        <div class="geo-row">
-          <button class="btn ghost small" id="btn-geo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 21s7-7.2 7-12a7 7 0 1 0-14 0c0 4.8 7 12 7 12z"/><circle cx="12" cy="9" r="2.3"/></svg>取得し直す</button>
-          <span class="geo-status" id="geo-status">自動で取得します…（うまくいかない場合はボタンでやり直せます）</span>
-        </div>
-      </div>
-      <div class="field">
         <label>目的地</label>
         <div class="geo-row">
           <input type="text" id="input-destination" placeholder="行き先を入力（例: 二条城、清水寺、嵐山 など）" autocomplete="off">
@@ -1263,9 +1255,6 @@ svg.leaflet-image-layer.leaflet-interactive path {
           <span><i class="dot dot-target"></i>目的地</span>
         </div>
         <p class="map-click-hint">地図をクリックしても目的地を選べます</p>
-      </div>
-      <div class="route-preview" id="route-preview">
-        写真はどの順番から撮影してもOK。好きな地点から探しに行こう。
       </div>
       <div class="field apikey-field">
         <p class="apikey-note">道中で探す写真には、実際のストリートビューのみを使用します。ストリートビューが見つからない地点は自動でスキップされます。</p>
@@ -2151,33 +2140,25 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }, function(){ /* 継続取得できない場合は最後に取得できた位置のまま表示を続ける */ }, {enableHighAccuracy:true, maximumAge:5000, timeout:10000});
   }
 
-  var geoStatus = document.getElementById('geo-status');
+  // 現在地の欄はUIから無くしたが、取得処理自体は画面裏で自動的に行う
   var geoRequestInFlight = false;
   function requestGeo(){
-    if(!navigator.geolocation){
-      geoStatus.textContent = '非対応のブラウザです（体験モードで進みます）';
-      return;
-    }
-    if(geoRequestInFlight) return;
+    if(!navigator.geolocation || geoRequestInFlight) return;
     geoRequestInFlight = true;
-    geoStatus.textContent = '現在地を取得中…';
     navigator.geolocation.getCurrentPosition(function(pos){
       geoRequestInFlight = false;
       state.userGeo = {lat:pos.coords.latitude, lng:pos.coords.longitude};
-      geoStatus.textContent = '取得しました ('+pos.coords.latitude.toFixed(3)+', '+pos.coords.longitude.toFixed(3)+')';
       refreshRouteMaps();
       startGeoWatch();
     }, function(){
-      geoRequestInFlight = false;
-      geoStatus.textContent = '取得できませんでした（体験モードで進みます。ボタンでやり直せます）';
+      geoRequestInFlight = false; // 取得できなくても体験モードでそのまま進める
     }, {timeout:8000});
   }
-  // 画面に入った時点で自動的に現在地取得を試みる（ボタンを押させない。取得済み・取得中なら何もしない）
+  // 画面に入った時点で自動的に現在地取得を試みる（取得済み・取得中なら何もしない）
   function autoRequestGeoOnce(){
     if(state.userGeo) return;
     requestGeo();
   }
-  document.getElementById('btn-geo').addEventListener('click', requestGeo);
 
   // ---------------- Street View ----------------
   function streetViewImageUrl(lat,lng,heading,key){
