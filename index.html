@@ -356,6 +356,7 @@
     font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
   }
   .stop-chip:hover:not(:disabled){border-color:var(--shu); color:var(--shu);}
+  .stop-chip.answered{border-color:var(--shu); color:var(--shu);}
   .stop-chip.active{background:var(--ink); color:var(--bg); border-color:var(--ink);}
   .stop-chip.done{background:var(--bg-2); border-color:var(--ink-faint); color:var(--ink-faint); cursor:default;}
   .stop-picker-note{font-size:11.5px; color:var(--ink-faint); margin:0 0 16px; line-height:1.7;}
@@ -1280,7 +1281,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
         <div class="quiz-progress" id="quiz-dest-label" style="text-align:right;"></div>
       </div>
       <div class="stop-picker" id="stop-picker"></div>
-      <p class="stop-picker-note">好きな番号のお題から撮影できます（済みの番号はもう選べません）</p>
+      <p class="stop-picker-note" id="stop-picker-note">好きな番号のお題から撮影できます（済みの番号はもう選べません）</p>
       <div class="quiz-map-wrap">
         <div class="quiz-map" id="quiz-map"></div>
         <div class="map-legend">
@@ -1664,7 +1665,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 
   var group = {
     roomCode: null, hostId: null, playerId: null, playerName: '',
-    isHost: false, roomRef: null, unsubRoom: null
+    isHost: false, roomRef: null, unsubRoom: null, lastPlayers: null
   };
 
   function groupStatus(msg){ document.getElementById('group-menu-status').textContent = msg; }
@@ -1752,6 +1753,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
       var room = snap.val();
       if(!room) return;
       group.hostId = room.hostId;
+      group.lastPlayers = room.players || {};
       renderPlayerList(room.players || {});
       // ゲストは、ホストがお題を確定させたら自動でクイズ画面へ
       if(!group.isHost && room.stops && room.status === 'playing' && !state.groupQuizStarted){
@@ -1760,6 +1762,23 @@ svg.leaflet-image-layer.leaflet-interactive path {
         state.stops = room.stops;
         state.stopsCount = room.stops.length;
         initQuiz();
+      }
+      // 対戦モード: 撮影後は撮り直し自由にし、全員が撮り終わったタイミングで
+      // 全員の答え合わせをまとめて表示する（結果はここで初めて全員に一斉公開される）
+      if(state.groupMode && state.stops.length > 0 && !state.groupRevealStarted){
+        var players = room.players || {};
+        var pids = Object.keys(players);
+        var allFinished = pids.length > 0 && pids.every(function(pid){ return !!players[pid].finished; });
+        if(allFinished){
+          state.groupRevealStarted = true;
+          state.results.sort(function(a,b){ return a.stopIdx - b.stopIdx; });
+          state.revealIdx = 0;
+          show('screen-reveal');
+          renderReveal();
+        }
+      }
+      if(state.groupMode && document.getElementById('screen-quiz').classList.contains('active')){
+        updateQuizWaitingStatus();
       }
       if(document.getElementById('screen-group-result').classList.contains('active')){
         renderLeaderboard(room.players || {});
@@ -1827,7 +1846,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     if(group.roomRef && group.unsubRoom) group.roomRef.off('value', group.unsubRoom);
     group.roomRef = null; group.unsubRoom = null; group.roomCode = null;
     group.isHost = false; group.hostId = null;
-    state.groupMode = false; state.groupQuizStarted = false;
+    state.groupMode = false; state.groupQuizStarted = false; state.groupRevealStarted = false;
   }
   document.getElementById('btn-group-home').addEventListener('click', function(){
     leaveGroup();
@@ -1850,7 +1869,8 @@ svg.leaflet-image-layer.leaflet-interactive path {
     results: [],
     revealIdx: 0,
     groupMode: false,
-    groupQuizStarted: false
+    groupQuizStarted: false,
+    groupRevealStarted: false
   };
 
   // ---------------- destination (自由入力で検索して指定) ----------------
@@ -2220,6 +2240,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
     state.idx = 0;
     state.results = [];
     state.revealIdx = 0;
+    state.groupRevealStarted = false;
     document.getElementById('quiz-total').textContent = state.stopsCount;
     document.getElementById('quiz-dest-label').textContent = '目的地: ' + state.destination;
     if(state.groupMode && group.roomCode) saveRecentRoom(group.roomCode, state.destination);
@@ -2237,18 +2258,41 @@ svg.leaflet-image-layer.leaflet-interactive path {
     }
     return 0;
   }
+  // 対戦モード: 自分は撮り終わったが、まだ全員が揃っていない間の状況メッセージ
+  function updateQuizWaitingStatus(){
+    if(!state.groupMode) return;
+    var statusEl = document.getElementById('quiz-status');
+    if(!statusEl) return;
+    var mineDone = state.results.length >= state.stopsCount;
+    if(!mineDone) return; // 自分がまだ撮影中なら、ファイル選択時のメッセージを上書きしない
+    var players = group.lastPlayers || {};
+    var pids = Object.keys(players);
+    var total = pids.length;
+    var doneCount = pids.filter(function(pid){ return !!players[pid].finished; }).length;
+    if(total > 0){
+      statusEl.textContent = '全員の撮影を待っています…（'+doneCount+' / '+total+'人が撮影完了。撮り直しもできます）';
+    } else {
+      statusEl.textContent = '全員の撮影を待っています…（撮り直しもできます）';
+    }
+  }
+
   function renderStopPicker(){
     var wrap = document.getElementById('stop-picker');
     if(!wrap) return;
     wrap.innerHTML = '';
     state.stops.forEach(function(stop, i){
       var done = isStopAnswered(i);
+      // 対戦モードは、みんなの結果が出るまで撮り直しができるようロックしない
+      var locked = done && !state.groupMode;
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'stop-chip' + (done ? ' done' : '') + (i === state.idx ? ' active' : '');
+      btn.className = 'stop-chip'
+        + (locked ? ' done' : '')
+        + (done && state.groupMode ? ' answered' : '')
+        + (i === state.idx ? ' active' : '');
       btn.textContent = done ? '✓' : String(i+1);
-      btn.disabled = done;
-      if(!done){
+      btn.disabled = locked;
+      if(!locked){
         btn.addEventListener('click', function(){
           state.idx = i;
           renderQuiz();
@@ -2309,8 +2353,15 @@ svg.leaflet-image-layer.leaflet-interactive path {
       frame.classList.remove('veiled');
       veilHint.style.display = 'none';
     }
+    var pickerNote = document.getElementById('stop-picker-note');
+    if(pickerNote){
+      pickerNote.textContent = state.groupMode
+        ? '好きな番号のお題から撮影できます（全員が撮り終わるまで、何度でも撮り直しできます）'
+        : '好きな番号のお題から撮影できます（済みの番号はもう選べません）';
+    }
     renderStopPicker();
     renderRouteMap('quiz-map');
+    updateQuizWaitingStatus();
   }
 
   function haversine(lat1,lng1,lat2,lng2){
@@ -2356,14 +2407,21 @@ svg.leaflet-image-layer.leaflet-interactive path {
       getGeoOrSimulate(function(distance, simulated, userGeo){
         var lm = state.stops[state.idx];
         var score = scoreForDistance(distance);
-        state.results.push({
+        var newResult = {
           stopIdx: state.idx,
           key: lm.key, name: lm.name, fact: lm.fact,
           targetImg: lm.liveImg, isLive: true,
           targetLat: lm.lat, targetLng: lm.lng,
           userImg: dataUrl, userGeo: userGeo,
           distance: distance, score: score, simulated: simulated
-        });
+        };
+        // 撮り直しの場合は、同じお題の結果を上書きする（対戦モードは全員が揃うまで撮り直し可）
+        var existingIdx = -1;
+        for(var ri=0; ri<state.results.length; ri++){
+          if(state.results[ri].stopIdx === state.idx){ existingIdx = ri; break; }
+        }
+        if(existingIdx >= 0){ state.results[existingIdx] = newResult; }
+        else { state.results.push(newResult); }
         if(state.groupMode && groupDb && group.roomCode && group.playerId){
           var totalScore = state.results.reduce(function(s,r){ return s+r.score; }, 0);
           groupDb.ref('rooms/'+group.roomCode+'/players/'+group.playerId).update({
@@ -2391,7 +2449,14 @@ svg.leaflet-image-layer.leaflet-interactive path {
             });
           }
         });
-        if(state.results.length >= state.stopsCount){
+        if(state.groupMode){
+          // 対戦モードは、自分が全問撮り終えても即座に答え合わせをしない。
+          // 全員が撮り終わるまでは一覧画面に戻り、撮り直しもできるようにする。
+          // 答え合わせは listenToRoom() 側で全員分の finished を確認できたときに一斉表示される。
+          state.idx = firstUnansweredIdx();
+          show('screen-quiz');
+          renderQuiz();
+        } else if(state.results.length >= state.stopsCount){
           // 全問撮影が完了 → ここから1つずつ答え合わせを表示
           state.results.sort(function(a,b){ return a.stopIdx - b.stopIdx; });
           state.revealIdx = 0;
